@@ -1,0 +1,2177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planning Chantiers</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#ffffff; --bg2:#f5f5f3; --bg3:#eeece8;
+  --text:#1a1a18; --text2:#666660; --text3:#aaaaaa;
+  --border:rgba(0,0,0,0.12); --border2:rgba(0,0,0,0.22);
+  --accent:#378ADD;
+  --danger:#E24B4A; --danger-bg:#FCEBEB; --danger-border:#F09595; --danger-text:#A32D2D;
+  --warn-bg:#FAEEDA; --warn-text:#BA7517;
+  --info-bg:#E6F1FB; --info-border:#85B7EB; --info-text:#185FA5;
+  --green-bg:#EAF3DE; --green-border:#97C459; --green-text:#3B6D11;
+  --radius:8px; --radius-lg:12px;
+  --font:'Segoe UI',system-ui,sans-serif;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1e1e1c; --bg2:#282825; --bg3:#323230;
+    --text:#f0efea; --text2:#a8a8a0; --text3:#555550;
+    --border:rgba(255,255,255,0.1); --border2:rgba(255,255,255,0.2);
+    --info-bg:#0c2840; --info-border:#185FA5; --info-text:#85B7EB;
+    --danger-bg:#2a1010; --danger-border:#7A2020; --danger-text:#F09595;
+    --warn-bg:#2a1e08; --warn-text:#EF9F27;
+    --green-bg:#102010; --green-border:#3B6D11; --green-text:#97C459;
+  }
+}
+body{ font-family:var(--font); background:var(--bg3); color:var(--text); min-height:100vh; }
+.topbar{ background:var(--bg); border-bottom:1px solid var(--border); padding:0 16px; height:52px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; gap:12px; }
+.topbar h1{ font-size:15px; font-weight:600; }
+.nav-tabs{ display:flex; gap:4px; }
+.nav-tab{ font-size:12px; padding:6px 12px; border-radius:var(--radius); border:1px solid transparent; cursor:pointer; color:var(--text2); background:transparent; transition:all .12s; }
+.nav-tab:hover{ background:var(--bg2); color:var(--text); }
+.nav-tab.active{ background:var(--bg2); border-color:var(--border2); color:var(--text); font-weight:600; }
+.view{ display:none; }
+.view.active{ display:flex; flex-direction:column; }
+#view-planning{ height:calc(100vh - 52px); flex-direction:row; }
+.sidebar{ width:210px; flex-shrink:0; background:var(--bg2); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+.sidebar-header{ padding:12px; border-bottom:1px solid var(--border); }
+.sidebar-list{ overflow-y:auto; flex:1; padding:6px; }
+.main{ flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+.main-header{ padding:10px 16px; border-bottom:1px solid var(--border); background:var(--bg); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-shrink:0; flex-wrap:wrap; }
+.main-scroll{ flex:1; overflow:auto; }
+.gantt-wrap{ padding:14px 16px; min-width:520px; }
+.legend-bar{ padding:8px 16px; border-top:1px solid var(--border); background:var(--bg); display:flex; flex-wrap:wrap; gap:10px; align-items:center; flex-shrink:0; }
+#view-st{ background:var(--bg3); min-height:calc(100vh - 52px); }
+.st-page{ max-width:900px; margin:0 auto; padding:24px 16px; }
+.st-page-header{ display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:10px; }
+.st-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+.st-card{ background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px 16px; display:flex; flex-direction:column; gap:7px; transition:border-color .12s; }
+.st-card:hover{ border-color:var(--border2); }
+.st-avatar{ width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; flex-shrink:0; }
+.st-tag{ display:inline-flex; align-items:center; gap:3px; font-size:10px; border-radius:4px; padding:2px 7px; font-weight:600; }
+button{ font-family:var(--font); font-size:12px; padding:6px 11px; border-radius:var(--radius); border:1px solid var(--border2); background:var(--bg); color:var(--text); cursor:pointer; transition:background .12s,opacity .12s; white-space:nowrap; }
+button:hover{ background:var(--bg2); }
+button:active{ opacity:.75; }
+button:disabled{ opacity:.4; cursor:not-allowed; }
+button.primary{ background:var(--info-bg); border-color:var(--info-border); color:var(--info-text); }
+button.danger-btn{ background:var(--danger-bg); border-color:var(--danger-border); color:var(--danger-text); }
+button.full{ width:100%; text-align:left; }
+input,select{ font-family:var(--font); font-size:12px; padding:7px 9px; border-radius:var(--radius); border:1px solid var(--border2); background:var(--bg); color:var(--text); width:100%; outline:none; transition:border-color .12s; }
+input:focus,select:focus{ border-color:var(--accent); }
+input[type=range]{ padding:0; border:none; background:none; height:4px; accent-color:var(--accent); }
+input[type=color]{ padding:2px; height:34px; width:46px; cursor:pointer; }
+label{ font-size:11px; color:var(--text2); display:block; margin-bottom:4px; }
+.c-item{ padding:8px 10px; border-radius:var(--radius); cursor:pointer; margin-bottom:3px; border:1px solid transparent; }
+.c-item:hover{ background:var(--bg3); }
+.c-item.active{ background:var(--bg); border-color:var(--border2); }
+.c-item .c-name{ font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.c-item .c-sub{ font-size:11px; color:var(--text2); margin-top:2px; }
+.badge-delay{ font-size:10px; font-weight:600; background:var(--danger-bg); color:var(--danger-text); border-radius:4px; padding:1px 6px; flex-shrink:0; }
+.alerts-panel{ border-bottom:1px solid var(--border); background:var(--bg); overflow-y:auto; max-height:260px; }
+.alert-card{ background:var(--bg2); border:1px solid var(--danger-border); border-radius:var(--radius); padding:10px 12px; margin-bottom:8px; }
+.contact-card{ background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:7px 10px; min-width:150px; flex:1; }
+.modal-overlay{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:200; align-items:center; justify-content:center; padding:16px; }
+.modal-overlay.open{ display:flex; }
+.modal-box{ background:var(--bg); border-radius:var(--radius-lg); border:1px solid var(--border); padding:20px; width:400px; max-width:100%; max-height:90vh; overflow-y:auto; }
+.modal-title{ font-size:15px; font-weight:600; margin-bottom:14px; }
+.form-group{ margin-bottom:10px; }
+.form-row{ display:flex; gap:8px; }
+.form-row>div{ flex:1; }
+.gantt-row{ display:flex; align-items:stretch; min-height:46px; border-radius:4px; }
+.gantt-row:nth-child(even){ background:var(--bg2); }
+.gantt-label{ flex-shrink:0; padding-right:8px; min-width:0; padding-top:7px; padding-bottom:7px; }
+.gantt-track{ flex:1; position:relative; min-height:28px; display:flex; align-items:center; }
+.prog-track{ height:3px; background:var(--border); border-radius:2px; margin-top:3px; }
+.prog-fill{ height:3px; border-radius:2px; }
+.export-section{ margin-bottom:14px; }
+.export-section+.export-section{ border-top:1px solid var(--border); padding-top:14px; }
+.section-label{ font-size:10px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; }
+.st-share-row{ display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius); margin-bottom:5px; gap:8px; }
+.toast{ position:fixed; bottom:24px; right:24px; background:var(--text); color:var(--bg); border-radius:var(--radius); padding:10px 16px; font-size:13px; z-index:999; opacity:0; transform:translateY(8px); transition:all .25s; pointer-events:none; }
+.toast.show{ opacity:1; transform:none; }
+.empty{ text-align:center; color:var(--text2); font-size:13px; padding:3rem 1rem; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:14px;">
+    <div>
+      <div style="font-size:10px;color:var(--text2);">Planning</div>
+      <h1>🏗 Mes Chantiers</h1>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="switchView('planning')">📅 Planning</button>
+      <button class="nav-tab" onclick="switchView('overview')">📊 Vue d'ensemble</button>
+      <button class="nav-tab" onclick="switchView('st')" id="tab-st">👷 Sous-traitants <span id="st-count-badge" style="font-size:10px;color:var(--text3);margin-left:2px;"></span></button>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span id="sync-indicator" style="font-size:11px;color:var(--text2);">☁ Connexion…</span>
+    <div style="font-size:11px;color:var(--text2);" id="top-date"></div>
+    <button onclick="openNonWorkingSettings()" title="Jours non travaillés" style="padding:5px 9px;font-size:13px;">📆</button>
+  </div>
+</div>
+
+<!-- VUE PLANNING -->
+<div id="view-planning" class="view active">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <button class="full" onclick="openNewChantier()">+ Nouveau chantier</button>
+    </div>
+    <div class="sidebar-list" id="chantier-list"></div>
+  </div>
+  <div class="main">
+    <div class="main-header">
+      <div style="min-width:0;">
+        <div id="h-name" style="font-size:14px;font-weight:600;">Sélectionnez un chantier</div>
+        <div id="h-meta" style="font-size:11px;color:var(--text2);margin-top:2px;"></div>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;">
+        <button id="btn-alerts" style="display:none;" onclick="toggleAlerts()"></button>
+        <button id="btn-export" style="display:none;" onclick="openExport()">Exporter ↓</button>
+        <button id="btn-share" disabled onclick="openExport()">Partager ↗</button>
+        <button id="btn-add" disabled onclick="openAddTask()">+ Tâche</button>
+        <button id="btn-settings" disabled onclick="openChantierSettings()" title="Paramètres du chantier" style="padding:6px 9px;">⚙</button>
+      </div>
+    </div>
+    <div id="alerts-panel" class="alerts-panel" style="display:none;">
+      <div id="alerts-content" style="padding:10px 16px;"></div>
+    </div>
+    <div class="main-scroll">
+      <div class="gantt-wrap">
+        <!-- Barre de vues -->
+        <div id="view-toolbar" style="display:none;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="display:flex;border:1px solid var(--border2);border-radius:var(--radius);overflow:hidden;">
+            <button id="vt-full" onclick="setGanttView('full')" style="border:none;border-radius:0;padding:6px 14px;font-size:12px;font-weight:600;background:var(--accent);color:white;">Vue complète</button>
+            <button id="vt-month" onclick="setGanttView('month')" style="border:none;border-radius:0;padding:6px 14px;font-size:12px;background:var(--bg2);color:var(--text2);">Vue mensuelle</button>
+          </div>
+          <div id="month-nav" style="display:none;align-items:center;gap:6px;">
+            <button onclick="changeGanttMonth(-1)" style="padding:5px 10px;font-size:14px;line-height:1;">‹</button>
+            <select id="month-picker" onchange="onMonthPick()" style="font-size:12px;font-weight:600;padding:5px 8px;min-width:130px;"></select>
+            <button onclick="changeGanttMonth(1)" style="padding:5px 10px;font-size:14px;line-height:1;">›</button>
+            <button onclick="goToToday()" style="font-size:11px;padding:5px 10px;color:var(--danger);border-color:var(--danger);">Aujourd'hui</button>
+          </div>
+        </div>
+        <div class="empty" id="gantt-empty">← Sélectionnez un chantier pour voir son planning</div>
+        <div id="gantt" style="display:none;">
+          <div id="gantt-header"></div>
+          <div id="gantt-body" style="position:relative;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend-bar" id="legend" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- VUE SOUS-TRAITANTS -->
+<div id="view-st" class="view">
+  <div class="st-page">
+    <div class="st-page-header">
+      <div>
+        <h2 style="font-size:18px;font-weight:600;">Sous-traitants</h2>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px;" id="st-subtitle"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="st-search" placeholder="🔍 Rechercher..." oninput="renderSTPage()" style="width:170px;">
+        <select id="st-filter-metier" onchange="renderSTPage()" style="width:145px;"></select>
+        <button class="primary" onclick="openAddST()">+ Nouveau sous-traitant</button>
+      </div>
+    </div>
+    <div class="st-grid" id="st-grid"></div>
+  </div>
+</div>
+
+<!-- VUE D'ENSEMBLE -->
+<div id="view-overview" class="view" style="background:var(--bg3);min-height:calc(100vh - 52px);">
+  <div style="max-width:1100px;margin:0 auto;padding:24px 16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h2 style="font-size:18px;font-weight:600;">Vue d'ensemble</h2>
+        <div id="ov-subtitle" style="font-size:12px;color:var(--text2);margin-top:3px;"></div>
+      </div>
+      <button onclick="openNewChantier()" class="primary">+ Nouveau chantier</button>
+    </div>
+    <!-- Indicateurs globaux -->
+    <div id="ov-stats" style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;"></div>
+    <!-- Grille chantiers -->
+    <div id="ov-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;"></div>
+  </div>
+</div>
+
+<!-- QUICK UPDATE POPUP -->
+<div id="quick-popup" style="display:none;position:fixed;z-index:500;background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,.18);min-width:240px;max-width:300px;">
+  <div id="qp-header" style="margin-bottom:10px;"></div>
+  <div id="qp-bar" style="height:8px;background:var(--border);border-radius:4px;margin-bottom:10px;overflow:hidden;">
+    <div id="qp-fill" style="height:100%;border-radius:4px;transition:width .2s;"></div>
+  </div>
+
+  <div style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">Avancement</div>
+  <div style="display:flex;gap:4px;margin-bottom:10px;">
+    <button onclick="quickUpdateTask(-10)" style="flex:1;padding:5px;font-size:12px;font-weight:600;">−10%</button>
+    <button onclick="quickUpdateTask(-5)"  style="flex:1;padding:5px;font-size:12px;">−5%</button>
+    <button onclick="quickUpdateTask(5)"   style="flex:1;padding:5px;font-size:12px;">+5%</button>
+    <button onclick="quickUpdateTask(10)"  style="flex:1;padding:5px;font-size:12px;font-weight:600;">+10%</button>
+  </div>
+  <button onclick="quickUpdateTask(100-(window._qpTask?window._qpTask.avancement:0))" style="width:100%;padding:5px 8px;background:var(--green-bg);border-color:var(--green-border);color:var(--green-text);margin-bottom:10px;font-size:12px;">✓ Marquer terminé (100%)</button>
+
+  <div style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">Reporter la fin de</div>
+  <div style="display:flex;gap:4px;margin-bottom:12px;">
+    <button onclick="quickExtendTask(1)" style="flex:1;padding:5px;font-size:12px;">+1j</button>
+    <button onclick="quickExtendTask(2)" style="flex:1;padding:5px;font-size:12px;">+2j</button>
+    <button onclick="quickExtendTask(3)" style="flex:1;padding:5px;font-size:12px;">+3j</button>
+    <button onclick="quickExtendTask(4)" style="flex:1;padding:5px;font-size:12px;">+4j</button>
+    <button onclick="quickExtendTask(5)" style="flex:1;padding:5px;font-size:12px;font-weight:600;">+5j</button>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:8px;">
+    <button id="qp-edit-btn" style="font-size:11px;color:var(--info-text);background:none;border:none;padding:0;cursor:pointer;">✏ Modifier en détail →</button>
+    <button onclick="closeQuickPopup()" style="font-size:11px;padding:4px 8px;">Fermer</button>
+  </div>
+</div>
+
+
+<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
+  <div class="modal-box"><div id="modal-content"></div></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const DEFAULT_COLORS=['#378ADD','#EF9F27','#1D9E75','#D85A30','#7F77DD','#639922','#D4537E','#888780','#BA7517','#5DCAA5'];
+const LW=160;
+let activeId=null,alertsOpen=false;
+
+function defaultDB(){
+  return{
+    soustraitants:[
+      {id:1,nom:'Sanifan',        metier:'Plomberie',  tel:'06 11 22 33 44',email:'contact@sanifan.fr',    color:'#1D9E75',notes:''},
+      {id:2,nom:'ECF Électricité',metier:'Électricité',tel:'06 22 33 44 55',email:'contact@ecf.fr',        color:'#EF9F27',notes:''},
+      {id:3,nom:'Maçon Pro',      metier:'Maçonnerie', tel:'06 33 44 55 66',email:'maconpro@gmail.com',    color:'#378ADD',notes:''},
+      {id:4,nom:'IsoTech',        metier:'Isolation',  tel:'06 44 55 66 77',email:'contact@isotech.fr',    color:'#D4537E',notes:''},
+      {id:5,nom:'Bois & Charpente',metier:'Charpente', tel:'06 55 66 77 88',email:'bois.charpente@mail.fr',color:'#888780',notes:''}
+    ],
+    chantiers:[
+      {id:1,nom:"Villa Les Pins",client:"M. Dupont",taches:[
+        {id:1,nom:"Démolition",        stId:3,debut:"2026-03-15",fin:"2026-04-05",avancement:100},
+        {id:2,nom:"Gros œuvre",        stId:3,debut:"2026-04-06",fin:"2026-05-20",avancement:38},
+        {id:3,nom:"Électricité brut",  stId:2,debut:"2026-05-10",fin:"2026-06-20",avancement:0},
+        {id:4,nom:"Plomberie brut",    stId:1,debut:"2026-05-15",fin:"2026-06-30",avancement:0},
+        {id:5,nom:"Menuiserie ext.",   stId:null,debut:"2026-06-15",fin:"2026-07-31",avancement:0},
+        {id:6,nom:"Peinture finitions",stId:null,debut:"2026-07-15",fin:"2026-08-31",avancement:0}
+      ]},
+      {id:2,nom:"Immeuble Rénov Centre",client:"SCI Bellevue",taches:[
+        {id:1,nom:"Isolation façade", stId:4,   debut:"2026-04-01",fin:"2026-06-30",avancement:28},
+        {id:2,nom:"Menuiseries ext.", stId:null, debut:"2026-05-15",fin:"2026-07-15",avancement:0},
+        {id:3,nom:"Ravalement",       stId:null, debut:"2026-07-01",fin:"2026-08-31",avancement:0}
+      ]},
+      {id:3,nom:"Bureaux Technopole",client:"SA Innov",taches:[
+        {id:1,nom:"Charpente métal.",stId:5,   debut:"2026-04-15",fin:"2026-06-01",avancement:55},
+        {id:2,nom:"Cloisons",        stId:3,   debut:"2026-06-01",fin:"2026-07-15",avancement:0},
+        {id:3,nom:"Câblage",         stId:2,   debut:"2026-06-15",fin:"2026-07-31",avancement:0},
+        {id:4,nom:"Carrelage",       stId:null,debut:"2026-07-15",fin:"2026-08-15",avancement:0},
+        {id:5,nom:"Peinture",        stId:null,debut:"2026-08-01",fin:"2026-09-01",avancement:0}
+      ]},
+      {id:4,nom:"Résidence Fontaine",client:"Habitat+",taches:[
+        {id:1,nom:"Terrassement",stId:3,   debut:"2026-05-01",fin:"2026-05-31",avancement:15},
+        {id:2,nom:"Fondations",  stId:3,   debut:"2026-05-20",fin:"2026-06-30",avancement:0},
+        {id:3,nom:"Charpente",   stId:5,   debut:"2026-07-01",fin:"2026-08-31",avancement:0},
+        {id:4,nom:"Couverture",  stId:null,debut:"2026-08-15",fin:"2026-09-30",avancement:0}
+      ]},
+      {id:5,nom:"Mairie – Extension",client:"Commune de Brest",taches:[
+        {id:1,nom:"Démolition", stId:3,   debut:"2026-06-01",fin:"2026-06-30",avancement:0},
+        {id:2,nom:"Gros œuvre", stId:3,   debut:"2026-07-01",fin:"2026-09-30",avancement:0},
+        {id:3,nom:"Charpente",  stId:5,   debut:"2026-09-01",fin:"2026-10-15",avancement:0},
+        {id:4,nom:"Menuiserie", stId:null,debut:"2026-09-15",fin:"2026-11-01",avancement:0},
+        {id:5,nom:"Électricité",stId:2,   debut:"2026-10-01",fin:"2026-11-15",avancement:0}
+      ]}
+    ]
+  };
+}
+
+// Jours fériés belges 2026-2027 (modifiables dans les réglages)
+const HOLIDAYS_BELGIQUE = [
+  '2026-01-01','2026-04-06','2026-05-01','2026-05-14','2026-05-25',
+  '2026-07-21','2026-08-15','2026-11-01','2026-11-11','2026-12-25',
+  '2027-01-01','2027-03-29','2027-05-01','2027-05-06','2027-05-17',
+  '2027-07-21','2027-08-15','2027-11-01','2027-11-11','2027-12-25'
+];
+
+let db=loadDB()||defaultDB();
+// S'assurer que nonWorkingDays existe
+if(!db.nonWorkingDays) db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
+
+// ============================================================
+// SUPABASE SYNC
+// ============================================================
+const SUPA_URL='https://nlukbtfpxgngpfetfjdg.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5sdWtidGZweGduZ3BmZXRmamRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxOTIwNzYsImV4cCI6MjA5Mzc2ODA3Nn0.5fLOFau_xrFpIdTytEpVvOcZdxhIWsnHlJCxylRUFYY';
+const SUPA_HEADERS={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
+let _syncPending=false, _lastSync=0;
+
+async function loadFromCloud(){
+  try{
+    const r=await fetch(SUPA_URL+'/rest/v1/planning?id=eq.main&select=data',{headers:SUPA_HEADERS});
+    if(!r.ok)return null;
+    const rows=await r.json();
+    return rows.length?rows[0].data:null;
+  }catch(e){return null;}
+}
+
+async function saveToCloud(data){
+  try{
+    await fetch(SUPA_URL+'/rest/v1/planning',{
+      method:'POST',
+      headers:{...SUPA_HEADERS,'Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({id:'main',data,updated_at:new Date().toISOString()})
+    });
+  }catch(e){}
+}
+
+function saveDB(){
+  try{localStorage.setItem('planning_db_v3',JSON.stringify(db));}catch(e){}
+  // Sync cloud en arrière-plan (anti-rebond 800ms)
+  clearTimeout(window._syncTimer);
+  window._syncTimer=setTimeout(()=>saveToCloud(db),800);
+  updateSyncIndicator('saving');
+}
+
+function loadDB(){
+  try{const d=localStorage.getItem('planning_db_v3');return d?JSON.parse(d):null;}catch(e){return null;}
+}
+
+function updateSyncIndicator(state){
+  const el=document.getElementById('sync-indicator');
+  if(!el)return;
+  if(state==='ok')    {el.textContent='☁ Synchronisé';el.style.color='var(--green-text)';}
+  else if(state==='saving'){el.textContent='☁ Sauvegarde…';el.style.color='var(--text2)';}
+  else if(state==='error') {el.textContent='⚠ Hors ligne';el.style.color='var(--warn-text)';}
+  else if(state==='loading'){el.textContent='☁ Chargement…';el.style.color='var(--text2)';}
+}
+
+// Polling toutes les 30s pour détecter les modifications d'autres appareils
+async function pollCloud(){
+  try{
+    const cloudData=await loadFromCloud();
+    if(!cloudData)return;
+    const cloudStr=JSON.stringify(cloudData);
+    const localStr=JSON.stringify(db);
+    if(cloudStr!==localStr){
+      // Données plus récentes dans le cloud
+      db=cloudData;
+      if(!db.nonWorkingDays) db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
+      try{localStorage.setItem('planning_db_v3',JSON.stringify(db));}catch(e){}
+      renderSidebar();
+      if(activeId){
+        const c=db.chantiers.find(x=>x.id===activeId);
+        if(c)selectC(activeId); else{activeId=null;renderSidebar();}
+      }
+      renderSTPage();
+      updateSyncIndicator('ok');
+      toast('Planning mis à jour depuis le cloud ☁');
+    } else {
+      updateSyncIndicator('ok');
+    }
+  }catch(e){updateSyncIndicator('error');}
+}
+
+// Initialisation : charger depuis le cloud en priorité
+async function initDB(){
+  updateSyncIndicator('loading');
+  const cloudData=await loadFromCloud();
+  if(cloudData){
+    db=cloudData;
+    if(!db.nonWorkingDays) db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
+    try{localStorage.setItem('planning_db_v3',JSON.stringify(db));}catch(e){}
+    updateSyncIndicator('ok');
+  } else {
+    updateSyncIndicator('error');
+  }
+  // Rendre l'interface
+  renderSidebar();
+  if(db.chantiers.length)selectC(db.chantiers[0].id);
+  renderSTPage();
+  // Polling toutes les 30 secondes
+  setInterval(pollCloud, 30000);
+}
+
+
+// --- UTILS ---
+function pDate(s){return new Date(s+'T00:00:00');}
+function addD(d,n){let r=new Date(d);r.setDate(r.getDate()+n);return r;}
+function diffD(a,b){return Math.round((b-a)/86400000);}
+function fmtD(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});}
+function fmtShort(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});}
+function getST(id){return db.soustraitants.find(s=>s.id===id)||null;}
+function stColor(id){const s=getST(id);return s?s.color:'#999';}
+function stName(id){const s=getST(id);return s?s.nom:'—';}
+function stInitials(nom){return nom.split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);}
+function hexToRgb(hex){return[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];}
+
+// Jours non travaillés
+function isNonWorking(date){
+  const nwd=db.nonWorkingDays||{};
+  if(nwd.skipWeekends){const d=date.getDay();if(d===0||d===6)return true;}
+  const key=date.toISOString().slice(0,10);
+  return(nwd.holidays||[]).includes(key);
+}
+function workingDays(dateA,dateB){
+  if(dateA>dateB)return 0;
+  let count=0,cur=new Date(dateA);
+  while(cur<=dateB){if(!isNonWorking(cur))count++;cur=addD(cur,1);}
+  return count;
+}
+// Durée affichée d'une tâche en jours calendaires (inclusive : même jour = 1j)
+function taskDur(debut,fin){return diffD(pDate(debut),pDate(fin))+1;}
+// Ajouter N jours ouvrés à partir d'une date (en avant)
+function addWorkingDays(startDate, nDays){
+  let cur=new Date(startDate),count=0;
+  while(count<nDays){cur=addD(cur,1);if(!isNonWorking(cur))count++;}
+  return cur;
+}
+// Reculer N jours ouvrés depuis une date (en arrière)
+function subtractWorkingDays(endDate, nDays){
+  let cur=new Date(endDate),count=0;
+  while(count<nDays){cur=addD(cur,-1);if(!isNonWorking(cur))count++;}
+  return cur;
+}
+// Convertir jours ouvrés → libellé lisible
+function workingDaysLabel(n){
+  if(!n)return '';
+  const weeks=(n/5).toFixed(1);
+  const months=(n/21).toFixed(1);
+  const parts=[];
+  if(n<10) parts.push(`${n}j ouvrés`);
+  else if(n<25) parts.push(`${n}j ouvrés ≈ ${weeks} sem.`);
+  else parts.push(`${n}j ouvrés ≈ ${months} mois`);
+  return parts[0];
+}
+
+function expectedPct(t){
+  const today=new Date(),s=pDate(t.debut),e=pDate(t.fin);
+  if(today<=s)return 0;
+  if(today>=e)return 100;
+  const nwd=db.nonWorkingDays||{};
+  if(nwd.skipWeekends||(nwd.holidays||[]).length){
+    const total=workingDays(s,e)||1;
+    const elapsed=workingDays(s,today);
+    return Math.round(elapsed/total*100);
+  }
+  return Math.round(diffD(s,today)/diffD(s,e)*100);
+}
+function getPred(t){if(!t.dependsOn)return null;for(const c of db.chantiers){const p=c.taches.find(x=>x.id===t.dependsOn);if(p)return p;}return null;}
+function isBlocked(t){
+  const pred=getPred(t);
+  if(!pred)return false;
+  if(t.depType==='SS'){
+    // Start-to-Start : bloqué seulement si le prédécesseur n'a pas encore commencé
+    return pred.avancement===0&&new Date()<pDate(pred.debut);
+  }
+  // Finish-to-Start (défaut) : bloqué tant que le prédécesseur n'est pas terminé
+  return pred.avancement<100;
+}
+function isDelayed(t){if(t.locked)return false;if(isBlocked(t))return false;const ep=expectedPct(t);return ep>10&&t.avancement<ep-10&&t.avancement<100;}
+function delayDays(t){
+  const s=pDate(t.debut),e=pDate(t.fin);
+  const nwd=db.nonWorkingDays||{};
+  const useWork=nwd.skipWeekends||(nwd.holidays||[]).length;
+  const total=useWork?workingDays(s,e):taskDur(t.debut,t.fin);
+  if(!total)return 0;
+  return Math.max(0,Math.round((expectedPct(t)-t.avancement)/100*total));
+}
+function getImpacted(c,t){const tFin=pDate(t.fin);return c.taches.filter(x=>x.id!==t.id&&pDate(x.debut)>=tFin&&diffD(tFin,pDate(x.debut))<=21);}
+function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2500);}
+function nextSTId(){return Math.max(0,...db.soustraitants.map(s=>s.id))+1;}
+function nextTaskId(c){return Math.max(0,...c.taches.map(t=>t.id))+1;}
+// Échapper les caractères HTML dans les attributs
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// Avancement global d'un chantier
+function chantierProgress(c){
+  if(!c.taches.length)return 0;
+  return Math.round(c.taches.reduce((s,t)=>s+t.avancement,0)/c.taches.length);
+}
+function chantierStatus(c){
+  const delayed=c.taches.filter(t=>isDelayed(t)).length;
+  const blocked=c.taches.filter(t=>isBlocked(t)).length;
+  const done=c.taches.every(t=>t.avancement>=100);
+  if(done)return{label:'Terminé',color:'var(--green-text)',bg:'var(--green-bg)'};
+  if(delayed)return{label:delayed+' retard'+(delayed>1?'s':''),color:'var(--danger-text)',bg:'var(--danger-bg)'};
+  if(blocked)return{label:blocked+' en attente',color:'var(--warn-text)',bg:'var(--warn-bg)'};
+  return{label:'En cours',color:'var(--info-text)',bg:'var(--info-bg)'};
+}
+
+// --- VIEWS ---
+function switchView(v){
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  const idx=['planning','overview','st'].indexOf(v);
+  if(idx>=0) document.querySelectorAll('.nav-tab')[idx].classList.add('active');
+  if(v==='st')renderSTPage();
+  if(v==='overview')renderOverview();
+}
+
+document.getElementById('top-date').textContent=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+// ============================================================
+// PAGE SOUS-TRAITANTS
+// ============================================================
+function metierList(){
+  const custom=[...new Set(db.soustraitants.map(s=>s.metier).filter(Boolean))];
+  const defaults=['Maçonnerie','Électricité','Plomberie','Menuiserie','Peinture','Charpente','Couverture','Isolation','Carrelage'];
+  return[...new Set([...custom,...defaults])];
+}
+
+function renderSTPage(){
+  const search=(document.getElementById('st-search').value||'').toLowerCase().trim();
+  const filterM=document.getElementById('st-filter-metier').value;
+  const sel=document.getElementById('st-filter-metier');
+  const curVal=sel.value;
+  const metiers=[...new Set(db.soustraitants.map(s=>s.metier).filter(Boolean))].sort();
+  sel.innerHTML='<option value="">Tous les métiers</option>'+metiers.map(m=>`<option value="${m}"${curVal===m?' selected':''}>${m}</option>`).join('');
+
+  let list=[...db.soustraitants].sort((a,b)=>a.nom.localeCompare(b.nom,'fr'));
+  if(search)list=list.filter(s=>(s.nom+s.metier+s.email+s.tel).toLowerCase().includes(search));
+  if(filterM)list=list.filter(s=>s.metier===filterM);
+
+  document.getElementById('st-subtitle').textContent=`${db.soustraitants.length} sous-traitant${db.soustraitants.length>1?'s':''} enregistré${db.soustraitants.length>1?'s':''}`;
+  document.getElementById('st-count-badge').textContent=`(${db.soustraitants.length})`;
+
+  const grid=document.getElementById('st-grid');
+  if(!list.length){
+    grid.innerHTML=`<div class="empty" style="grid-column:1/-1;">${db.soustraitants.length?'Aucun résultat.':'Aucun sous-traitant. Cliquez sur "+ Nouveau sous-traitant".'}</div>`;
+    return;
+  }
+  grid.innerHTML=list.map(st=>{
+    const nbC=db.chantiers.filter(c=>c.taches.some(t=>t.stId===st.id)).length;
+    const nbT=db.chantiers.flatMap(c=>c.taches).filter(t=>t.stId===st.id).length;
+    const [r,g,b]=hexToRgb(st.color);
+    return`<div class="st-card">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="st-avatar" style="background:rgba(${r},${g},${b},.15);color:${st.color};">${stInitials(st.nom)}</div>
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${st.nom}</div>
+          <div style="font-size:11px;color:var(--text2);">${st.metier||'—'}</div>
+        </div>
+      </div>
+      ${st.tel?`<div style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;">📞 <a href="tel:${st.tel}" style="color:var(--text2);text-decoration:none;">${st.tel}</a></div>`:''}
+      ${st.email?`<div style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;">✉ <a href="mailto:${st.email}" style="color:var(--text2);text-decoration:none;">${st.email}</a></div>`:''}
+      ${st.notes?`<div style="font-size:10px;color:var(--text3);font-style:italic;">${st.notes}</div>`:''}
+      <div style="display:flex;gap:5px;flex-wrap:wrap;">
+        ${nbC?`<span class="st-tag" style="background:var(--info-bg);color:var(--info-text);">${nbC} chantier${nbC>1?'s':''}</span>`:''}
+        ${nbT?`<span class="st-tag" style="background:var(--bg2);color:var(--text2);">${nbT} tâche${nbT>1?'s':''}</span>`:`<span class="st-tag" style="background:var(--bg2);color:var(--text3);">Non assigné</span>`}
+      </div>
+      <div style="display:flex;gap:5px;margin-top:2px;">
+        <button onclick="openEditST(${st.id})" style="flex:1;font-size:11px;padding:4px 8px;">✏ Modifier</button>
+        <button onclick="mailST2(${st.id})" style="flex:1;font-size:11px;padding:4px 8px;">✉ Mail</button>
+        <button onclick="deleteST(${st.id})" class="danger-btn" style="font-size:11px;padding:4px 8px;">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function stFormHTML(st){
+  const color=st?st.color:DEFAULT_COLORS[db.soustraitants.length%DEFAULT_COLORS.length];
+  const dataList=metierList().map(m=>`<option>${m}</option>`).join('');
+  return`
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label>Nom / Entreprise *</label><input id="st-nom" type="text" value="${st?st.nom:''}" placeholder="ex: Sanifan, ECF..."></div>
+      <div class="form-group" style="flex:0 0 auto;"><label>Couleur</label><input id="st-color" type="color" value="${color}"></div>
+    </div>
+    <div class="form-group"><label>Métier / Spécialité</label>
+      <input id="st-metier" type="text" list="metier-dl" value="${st?st.metier||'':''}" placeholder="ex: Plomberie, Électricité...">
+      <datalist id="metier-dl">${dataList}</datalist>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Téléphone</label><input id="st-tel" type="tel" value="${st?st.tel||'':''}" placeholder="06 00 00 00 00"></div>
+      <div class="form-group"><label>Email</label><input id="st-email" type="email" value="${st?st.email||'':''}" placeholder="contact@..."></div>
+    </div>
+    <div class="form-group"><label>Notes (SIRET, adresse, remarques...)</label><input id="st-notes" type="text" value="${st?st.notes||'':''}" placeholder="Optionnel"></div>`;
+}
+
+function openAddST(){
+  showModal(`<div class="modal-title">Nouveau sous-traitant</div>
+    ${stFormHTML(null)}
+    <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:14px;">
+      <button onclick="closeModal()">Annuler</button>
+      <button onclick="saveST()" class="primary">Ajouter</button>
+    </div>`);
+}
+
+function openEditST(id){
+  const st=getST(id);if(!st)return;
+  showModal(`<div class="modal-title">Modifier — ${st.nom}</div>
+    ${stFormHTML(st)}
+    <div style="display:flex;justify-content:space-between;margin-top:14px;">
+      <button onclick="deleteST(${id})" class="danger-btn">Supprimer</button>
+      <div style="display:flex;gap:7px;">
+        <button onclick="closeModal()">Annuler</button>
+        <button onclick="updateST(${id})" class="primary">Enregistrer</button>
+      </div>
+    </div>`);
+}
+
+function readSTForm(){
+  return{
+    nom:document.getElementById('st-nom').value.trim(),
+    metier:document.getElementById('st-metier').value.trim(),
+    tel:document.getElementById('st-tel').value.trim(),
+    email:document.getElementById('st-email').value.trim(),
+    color:document.getElementById('st-color').value,
+    notes:document.getElementById('st-notes').value.trim()
+  };
+}
+
+function saveST(){
+  const f=readSTForm();
+  if(!f.nom){toast('Le nom est requis.');return;}
+  db.soustraitants.push({id:nextSTId(),...f});
+  saveDB();closeModal();renderSTPage();renderSidebar();
+  if(activeId)renderGantt(db.chantiers.find(x=>x.id===activeId));
+  toast('Sous-traitant ajouté !');
+}
+
+function updateST(id){
+  const f=readSTForm();
+  if(!f.nom){toast('Le nom est requis.');return;}
+  Object.assign(getST(id),f);
+  saveDB();closeModal();renderSTPage();renderSidebar();
+  if(activeId)selectC(activeId);
+  toast('Sous-traitant mis à jour !');
+}
+
+function deleteST(id){
+  const st=getST(id);
+  const used=db.chantiers.flatMap(c=>c.taches).filter(t=>t.stId===id).length;
+  const msg=used?`⚠ ${st.nom} est assigné à ${used} tâche(s). Elles resteront sans sous-traitant. Confirmer ?`:`Supprimer ${st.nom} ?`;
+  if(!confirm(msg))return;
+  db.chantiers.forEach(c=>c.taches.forEach(t=>{if(t.stId===id)t.stId=null;}));
+  db.soustraitants=db.soustraitants.filter(s=>s.id!==id);
+  saveDB();closeModal();renderSTPage();renderSidebar();
+  if(activeId)selectC(activeId);
+  toast('Sous-traitant supprimé.');
+}
+
+function mailST2(id){
+  const st=getST(id);if(!st||!st.email){toast('Pas d\'email renseigné.');return;}
+  window.location.href=`mailto:${st.email}?subject=Planning%20chantier`;
+}
+
+// ============================================================
+// PLANNING
+// ============================================================
+function renderSidebar(){
+  const actifs=db.chantiers.filter(c=>!c.archived);
+  const archives=db.chantiers.filter(c=>c.archived);
+  let html=actifs.map(c=>{
+    const nd=c.taches.filter(t=>isDelayed(t)).length;
+    const nc=(c.contraintes||[]).length;
+    const today=new Date();
+    const activeContrainte=(c.contraintes||[]).find(ct=>pDate(ct.debut)<=today&&pDate(ct.fin)>=today);
+    return`<div class="c-item${activeId===c.id?' active':''}" onclick="selectC(${c.id})">
+      <div style="display:flex;align-items:center;gap:5px;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:3px;">
+            <div class="c-name">${c.nom}</div>
+            ${nd?`<span class="badge-delay">${nd}⚠</span>`:''}
+            ${activeContrainte?`<span style="font-size:11px;">${activeContrainte.type==='inaccessible'?'🚫':'⚠️'}</span>`:''}
+          </div>
+          <div class="c-sub">${c.client}</div>
+        </div>
+        <button onclick="quickAddTask(event,${c.id})" title="Ajouter une tâche"
+          style="flex-shrink:0;width:22px;height:22px;padding:0;font-size:16px;line-height:1;border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:.5;border-color:var(--border);"
+          onmouseenter="this.style.opacity='1';this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+          onmouseleave="this.style.opacity='.5';this.style.borderColor='var(--border)';this.style.color=''">+</button>
+      </div>
+    </div>`;
+  }).join('');
+  if(archives.length){
+    html+=`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+      <div onclick="toggleArchiveSection()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:4px 6px;border-radius:var(--radius);" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background='transparent'">
+        <span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;">📦 Archives (${archives.length})</span>
+        <span id="archive-arrow" style="font-size:10px;color:var(--text3);">${window._archiveOpen?'▲':'▼'}</span>
+      </div>
+      <div id="archive-list" style="display:${window._archiveOpen?'block':'none'};">
+        ${archives.map(c=>`<div class="c-item${activeId===c.id?' active':''}" onclick="selectC(${c.id})" style="opacity:.6;">
+          <div class="c-name" style="font-style:italic;">${c.nom}</div>
+          <div class="c-sub">${c.client}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }
+  document.getElementById('chantier-list').innerHTML=html;
+}
+
+function quickAddTask(event, cid){
+  event.stopPropagation();
+  const needsSwitch = activeId !== cid;
+  if(needsSwitch){
+    selectC(cid);
+    setTimeout(openAddTask, 60); // attendre le rendu du gantt
+  } else {
+    openAddTask();
+  }
+}
+
+function selectC(id){
+  activeId=id;alertsOpen=false;
+  const c=db.chantiers.find(x=>x.id===id);
+  renderSidebar();
+  document.getElementById('h-name').textContent=c.nom+(c.archived?' 📦':'');
+  document.getElementById('h-meta').textContent=`Client : ${c.client} · ${c.taches.length} tâche(s)${c.archived?' · Archivé':''}`;
+  document.getElementById('btn-share').disabled=false;
+  document.getElementById('btn-add').disabled=!!c.archived;
+  document.getElementById('btn-export').style.display='';
+  document.getElementById('btn-settings').disabled=false;
+  document.getElementById('alerts-panel').style.display='none';
+  renderAlertBtn(c);renderGantt(c);renderLegend(c);
+}
+
+function renderAlertBtn(c){
+  const btn=document.getElementById('btn-alerts');
+  const delayed=c.taches.filter(t=>isDelayed(t));
+  if(!delayed.length){btn.style.display='none';return;}
+  btn.style.display='';btn.textContent=`⚠ ${delayed.length} retard${delayed.length>1?'s':''}`;btn.className='danger-btn';
+}
+
+function toggleAlerts(){
+  alertsOpen=!alertsOpen;
+  const panel=document.getElementById('alerts-panel');
+  if(alertsOpen){renderAlertsContent(db.chantiers.find(x=>x.id===activeId));panel.style.display='block';}
+  else panel.style.display='none';
+}
+
+function renderAlertsContent(c){
+  const delayed=c.taches.filter(t=>isDelayed(t));
+  document.getElementById('alerts-content').innerHTML=delayed.map(t=>{
+    const ep=expectedPct(t),dd=delayDays(t),impacted=getImpacted(c,t);
+    const stList=[t.stId,...impacted.map(x=>x.stId)].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).map(id=>getST(id)).filter(Boolean);
+    return`<div class="alert-card">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <span style="width:9px;height:9px;border-radius:2px;background:${stColor(t.stId)};"></span>
+        <strong style="font-size:13px;">${t.nom}</strong>
+        <span class="badge-delay">~${dd}j de retard</span>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Avancement : <strong style="color:var(--danger-text);">${t.avancement}%</strong> — attendu : <strong>${ep}%</strong> · ${diffD(pDate(t.debut),pDate(t.fin))}j</div>
+      <div style="height:5px;background:var(--border);border-radius:3px;width:220px;max-width:100%;margin-bottom:8px;">
+        <div style="height:5px;width:${ep}%;background:var(--danger-border);border-radius:3px;">
+          <div style="height:5px;width:${Math.round(t.avancement/Math.max(ep,1)*100)}%;background:var(--danger-text);border-radius:3px;"></div>
+        </div>
+      </div>
+      ${impacted.length?`<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">Impactées : ${impacted.map(x=>`<span style="font-size:10px;background:var(--warn-bg);color:var(--warn-text);border-radius:3px;padding:1px 5px;margin-right:3px;">${x.nom}</span>`).join('')}</div>`:''}
+      <div style="border-top:1px solid var(--border);padding-top:8px;">
+        <div style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Personnes à prévenir</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${stList.map(st=>`<div class="contact-card">
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">
+              <span style="width:8px;height:8px;border-radius:2px;background:${st.color};"></span>
+              <strong style="font-size:11px;">${st.nom}</strong>
+            </div>
+            <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${st.metier||''}</div>
+            <div style="display:flex;gap:4px;">
+              ${st.tel?`<button onclick="window.location.href='tel:${st.tel}'" style="font-size:10px;padding:3px 7px;">📞 ${st.tel}</button>`:''}
+              ${st.email?`<button onclick="window.location.href='mailto:${st.email}'" style="font-size:10px;padding:3px 7px;">✉</button>`:''}
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ---- ÉTAT VUE GANTT ----
+let ganttViewMode = 'full'; // 'full' | 'month'
+let ganttMonth = { year: new Date().getFullYear(), month: new Date().getMonth() };
+
+function setGanttView(mode){
+  ganttViewMode = mode;
+  document.getElementById('vt-full').style.cssText='border:none;border-radius:0;padding:6px 14px;font-size:12px;'+(mode==='full'?'font-weight:600;background:var(--accent);color:white;':'background:var(--bg2);color:var(--text2);');
+  document.getElementById('vt-month').style.cssText='border:none;border-radius:0;padding:6px 14px;font-size:12px;'+(mode==='month'?'font-weight:600;background:var(--accent);color:white;':'background:var(--bg2);color:var(--text2);');
+  document.getElementById('month-nav').style.display=mode==='month'?'flex':'none';
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(c)renderGantt(c);
+}
+
+function changeGanttMonth(delta){
+  let {year,month}=ganttMonth;
+  month+=delta;
+  if(month<0){month=11;year--;}
+  if(month>11){month=0;year++;}
+  ganttMonth={year,month};
+  updateMonthPicker();
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(c)renderGantt(c);
+}
+
+function goToToday(){
+  ganttMonth={year:new Date().getFullYear(),month:new Date().getMonth()};
+  updateMonthPicker();
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(c)renderGantt(c);
+}
+
+function onMonthPick(){
+  const val=document.getElementById('month-picker').value;
+  if(!val)return;
+  const [y,m]=val.split('-').map(Number);
+  ganttMonth={year:y,month:m};
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(c)renderGantt(c);
+}
+
+function buildMonthPickerOptions(c){
+  // Générer la liste des mois couverts par le chantier
+  if(!c||!c.taches.length)return '';
+  const allD=c.taches.flatMap(t=>[pDate(t.debut),pDate(t.fin)]);
+  const minD=new Date(Math.min(...allD)), maxD=new Date(Math.max(...allD));
+  const opts=[];
+  let cur=new Date(minD.getFullYear(),minD.getMonth(),1);
+  const end=new Date(maxD.getFullYear(),maxD.getMonth(),1);
+  while(cur<=end){
+    const y=cur.getFullYear(),m=cur.getMonth();
+    const label=cur.toLocaleString('fr',{month:'long',year:'numeric'});
+    const selected=(y===ganttMonth.year&&m===ganttMonth.month)?' selected':'';
+    opts.push(`<option value="${y}-${m}"${selected}>${label.charAt(0).toUpperCase()+label.slice(1)}</option>`);
+    cur=new Date(y,m+1,1);
+  }
+  return opts.join('');
+}
+
+function updateMonthPicker(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const sel=document.getElementById('month-picker');
+  if(sel&&c) sel.innerHTML=buildMonthPickerOptions(c);
+}
+
+function renderGantt(c){
+  document.getElementById('gantt-empty').style.display='none';
+  document.getElementById('gantt').style.display='block';
+  document.getElementById('view-toolbar').style.display='flex';
+
+  if(!c.taches.length){
+    // Pas de tâches : afficher quand même le calendrier sur 3 mois
+    const today=new Date();
+    let mn=new Date(today.getFullYear(),today.getMonth(),1);
+    let mx=new Date(today.getFullYear(),today.getMonth()+3,0);
+    const dow=mn.getDay(); mn=addD(mn,-(dow===0?6:dow-1));
+    mx=addD(mx,7);
+    const total=diffD(mn,mx);
+    _renderGanttCore(c,[],mn,mx,total,'weeks');
+    document.getElementById('gantt-body').innerHTML=
+      `<div style="text-align:center;color:var(--text2);font-size:12px;padding:24px 0;border:1.5px dashed var(--border);border-radius:var(--radius);margin-top:6px;">
+        Aucune tâche — cliquez sur <strong>+</strong> pour en ajouter une
+       </div>`;
+    return;
+  }
+
+  if(ganttViewMode==='month'){
+    renderGanttMonthly(c);
+  } else {
+    renderGanttFull(c);
+  }
+}
+
+// ---- VUE COMPLÈTE ----
+function renderGanttFull(c){
+  const taches=[...c.taches].sort((a,b)=>a.debut.localeCompare(b.debut));
+  const allD=taches.flatMap(t=>[pDate(t.debut),pDate(t.fin)]);
+  let mn=new Date(Math.min(...allD)),mx=new Date(Math.max(...allD));
+  mn=addD(mn,-7);mx=addD(mx,14);
+  const dow=mn.getDay();mn=addD(mn,-(dow===0?6:dow-1));
+  const total=diffD(mn,mx);
+  _renderGanttCore(c,taches,mn,mx,total,'weeks');
+}
+
+// ---- VUE MENSUELLE ----
+function renderGanttMonthly(c){
+  const {year,month}=ganttMonth;
+  // Plage = mois sélectionné
+  let mn=new Date(year,month,1);
+  let mx=new Date(year,month+1,0); // dernier jour du mois
+  // Snap mn au lundi précédent
+  const dow=mn.getDay(); mn=addD(mn,-(dow===0?6:dow-1));
+  mx=addD(mx,1);
+  const total=diffD(mn,mx);
+
+  // Filtrer les tâches qui chevauchent ce mois
+  const mStart=new Date(year,month,1), mEnd=new Date(year,month+1,0);
+  const taches=c.taches
+    .filter(t=>pDate(t.fin)>=mStart&&pDate(t.debut)<=mEnd)
+    .sort((a,b)=>a.debut.localeCompare(b.debut));
+
+  // Mettre à jour le sélecteur de mois
+  const sel=document.getElementById('month-picker');
+  if(sel) sel.innerHTML=buildMonthPickerOptions(c);
+
+  if(!taches.length){
+    document.getElementById('gantt-header').innerHTML=`<div style="font-size:12px;color:var(--text2);padding:8px 0;">Aucune tâche ce mois.</div>`;
+    document.getElementById('gantt-body').innerHTML='';return;
+  }
+  _renderGanttCore(c,taches,mn,mx,total,'days');
+}
+
+// ---- RENDU COMMUN ----
+function _renderGanttCore(c,taches,mn,mx,total,granularity){
+  const today=new Date();
+
+  // ── EN-TÊTE TIMELINE ──
+  let hH=`<div style="position:relative;height:${granularity==='days'?44:36}px;margin-left:${LW}px;margin-bottom:4px;">`;
+
+  if(granularity==='days'){
+    // Vue mensuelle : ligne mois + ligne jours numérotés
+    let cur=new Date(mn),prevM=-1;
+    while(cur<=mx){
+      const p=diffD(mn,cur)/total*100;
+      if(cur.getMonth()!==prevM){
+        prevM=cur.getMonth();
+        const mLabel=cur.toLocaleString('fr',{month:'long',year:'numeric'});
+        hH+=`<span style="position:absolute;left:${p}%;font-size:10px;font-weight:700;color:var(--text);top:0;white-space:nowrap;">${mLabel.charAt(0).toUpperCase()+mLabel.slice(1)}</span>`;
+      }
+      cur=addD(cur,1);
+    }
+    // Ligne des jours
+    cur=new Date(mn);
+    while(cur<=mx){
+      const p=diffD(mn,cur)/total*100;
+      const day=cur.getDay();
+      const isWE=(day===0||day===6);
+      const key=cur.toISOString().slice(0,10);
+      const isFerie=(db.nonWorkingDays?.holidays||[]).includes(key);
+      const isToday=diffD(cur,today)===0;
+      hH+=`<span style="position:absolute;left:${p}%;bottom:4px;font-size:${isToday?10:9}px;transform:translateX(-50%);font-weight:${isToday?700:400};color:${isToday?'var(--danger)':isWE||isFerie?'var(--text3)':'var(--text2)'};">${cur.getDate()}</span>`;
+      if(day===1||day===0){// Lundi ou dimanche: trait vertical
+        hH+=`<span style="position:absolute;left:${p}%;bottom:0;width:1px;height:8px;background:var(--border2);"></span>`;
+      }
+      cur=addD(cur,1);
+    }
+  } else {
+    // Vue complète : mois + semaines (comportement original)
+    let cur=new Date(mn),prevM=-1;
+    while(cur<=mx){
+      const p=diffD(mn,cur)/total*100;
+      if(cur.getMonth()!==prevM){prevM=cur.getMonth();hH+=`<span style="position:absolute;left:${p}%;font-size:10px;font-weight:600;color:var(--text2);top:0;white-space:nowrap;">${cur.toLocaleString('fr',{month:'short',year:'2-digit'})}</span>`;}
+      hH+=`<span style="position:absolute;left:${p}%;bottom:3px;font-size:9px;color:var(--text3);transform:translateX(-50%);">${cur.getDate()}</span>`;
+      hH+=`<span style="position:absolute;left:${p}%;bottom:14px;width:1px;height:5px;background:var(--border2);"></span>`;
+      cur=addD(cur,7);
+    }
+  }
+  hH+='</div>';
+  document.getElementById('gantt-header').innerHTML=hH;
+
+  // ── CORPS ──
+  const todayFrac=diffD(mn,today)/total;
+  let bH=`<div style="position:relative;">`;
+
+  // Ombrage jours non travaillés
+  const nwd=db.nonWorkingDays||{};
+  if(nwd.skipWeekends||(nwd.holidays||[]).length){
+    let wCur=new Date(mn);
+    while(wCur<mx){
+      if(isNonWorking(wCur)){
+        const pf=(diffD(mn,wCur)/total);
+        const wf=(1/total);
+        bH+=`<div style="position:absolute;left:calc(${LW}px + (100% - ${LW}px)*${pf.toFixed(4)});width:calc((100% - ${LW}px)*${wf.toFixed(4)});top:0;bottom:0;background:rgba(0,0,0,0.045);pointer-events:none;z-index:0;"></div>`;
+      }
+      wCur=addD(wCur,1);
+    }
+  }
+
+  // Ligne aujourd'hui
+  if(todayFrac>=0&&todayFrac<=1)
+    bH+=`<div style="position:absolute;left:calc(${LW}px + (100% - ${LW}px)*${todayFrac.toFixed(4)});top:0;bottom:0;width:2px;background:var(--danger);z-index:5;pointer-events:none;">
+      <span style="position:absolute;top:0;left:3px;font-size:9px;color:var(--danger);white-space:nowrap;font-weight:600;">Auj.</span></div>`;
+
+  // Bandes contraintes d'accès
+  const contraintes=(c.contraintes||[]);
+  contraintes.forEach(ct=>{
+    const cs=pDate(ct.debut),ce=pDate(ct.fin);
+    if(ce<mn||cs>mx)return;
+    const cp=Math.max(diffD(mn,cs),0)/total;
+    const cw=(diffD(new Date(Math.max(cs,mn)),new Date(Math.min(ce,mx)))+1)/total;
+    const isInac=ct.type==='inaccessible';
+    bH+=`<div style="position:absolute;left:calc(${LW}px + (100% - ${LW}px)*${cp.toFixed(4)});width:calc((100% - ${LW}px)*${cw.toFixed(4)});top:0;bottom:0;background:${isInac?'rgba(226,75,74,0.08)':'rgba(239,159,39,0.1)'};border-left:2px solid ${isInac?'var(--danger)':'var(--warn-text)'};pointer-events:none;z-index:1;">
+      <div style="position:sticky;top:2px;font-size:9px;font-weight:600;color:${isInac?'var(--danger-text)':'var(--warn-text)'};padding:2px 4px;white-space:nowrap;overflow:hidden;">${isInac?'🚫':'⚠️'} ${ct.note||( isInac?'Inaccessible':'Accès partiel')}</div>
+    </div>`;
+  });
+
+  taches.forEach((t,i)=>{
+    const ts=pDate(t.debut),te=pDate(t.fin);
+    const visStart=new Date(Math.max(ts,mn));
+    const visEnd=new Date(Math.min(te,mx));
+    const lp=diffD(mn,ts)/total*100;
+    const wp=Math.max((diffD(ts,te)+1)/total*100,.5);
+    const visLp=diffD(mn,visStart)/total*100;
+    const visWp=Math.max((diffD(visStart,visEnd)+1)/total*100,.3);
+    const col=stColor(t.stId),delayed=isDelayed(t),done=t.avancement,durJ=taskDur(t.debut,t.fin);
+    const locked=!!t.locked,blocked=isBlocked(t);
+    const barCol=delayed?'var(--danger)':blocked?'#EF9F27':locked?'#888780':col;
+    const pred=getPred(t);
+    const isPartial=granularity==='days'&&(ts<mn||te>mx); // dépasse le mois affiché
+
+    bH+=`<div class="gantt-row">
+      <div class="gantt-label" style="width:${LW}px;cursor:pointer;" onclick="openEdit(${t.id})" title="Cliquer pour modifier">
+        <div style="display:flex;align-items:flex-start;gap:3px;">
+          ${delayed?'<span style="color:var(--danger);font-size:11px;flex-shrink:0;">⚠</span>':''}
+          ${blocked?`<span style="color:var(--warn-text);font-size:11px;flex-shrink:0;" title="En attente">🔗</span>`:''}
+          ${locked?'<span style="font-size:10px;flex-shrink:0;">🔒</span>':''}
+          ${isPartial?'<span style="font-size:10px;flex-shrink:0;" title="Continue sur un autre mois">↔</span>':''}
+          <div style="font-size:11px;font-weight:600;line-height:1.35;word-break:break-word;color:${delayed?'var(--danger-text)':blocked?'var(--warn-text)':locked?'var(--text2)':'var(--text)'};">${esc(t.nom)}</div>
+        </div>
+        <div style="font-size:10px;color:var(--text2);margin-top:1px;">${esc(stName(t.stId))} · ${durJ}j</div>
+        <div class="prog-track" style="width:90%;margin-top:3px;"><div class="prog-fill" style="width:${done}%;background:${barCol};"></div></div>
+      </div>
+      <div class="gantt-track" style="position:relative;cursor:pointer;" onclick="openQuickPopup(event,${t.id})">
+        <!-- Barre fond (durée totale, cliquable) -->
+        <div style="position:absolute;left:${visLp}%;width:${visWp}%;height:22px;top:50%;transform:translateY(-50%);background:${col};opacity:${blocked?.1:.18};border-radius:${ts<mn?'0 4px 4px 0':te>mx?'4px 0 0 4px':'4px'};${locked?'border:1.5px dashed #888780;':''}${blocked?'border:1.5px dashed #EF9F27;':''}"></div>
+        <!-- Barre avancement -->
+        ${done>0?`<div style="position:absolute;left:${visLp}%;width:${Math.max(visWp*done/100,.3)}%;height:22px;top:50%;transform:translateY(-50%);background:${barCol};border-radius:4px;display:flex;align-items:center;padding:0 5px;min-width:4px;">
+          <span style="font-size:9px;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${done>15?t.nom:''}</span>
+        </div>`:''}
+        ${done<=15?`<div style="position:absolute;left:calc(${visLp}% + ${Math.max(visWp*done/100,.5)}% + 4px);top:50%;transform:translateY(-50%);font-size:9px;color:var(--text2);pointer-events:none;">${done}%</div>`:''}
+      </div>
+    </div>`;
+  });
+  bH+='</div>';
+  document.getElementById('gantt-body').innerHTML=bH;
+  requestAnimationFrame(()=>drawDependencyArrows(c,taches,mn,total));
+}
+
+function drawDependencyArrows(c, taches, mn, total){
+  const body=document.getElementById('gantt-body');
+  if(!body)return;
+  const inner=body.querySelector('div');
+  if(!inner)return;
+  // Supprimer SVG existant
+  const ex=inner.querySelector('#dep-svg');
+  if(ex)ex.remove();
+  // Y a-t-il des dépendances ?
+  const deps=taches.filter(t=>t.dependsOn);
+  if(!deps.length)return;
+
+  const W=inner.offsetWidth;
+  const trackW=W-LW;
+  // Mesurer la hauteur réelle de chaque ligne
+  const rows=inner.querySelectorAll('.gantt-row');
+  const rowTops=[], rowMids=[];
+  rows.forEach((r,i)=>{
+    const top=r.offsetTop;
+    const mid=top+r.offsetHeight/2;
+    rowTops.push(top); rowMids.push(mid);
+  });
+  const totalH=inner.offsetHeight;
+
+  const NS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(NS,'svg');
+  svg.id='dep-svg';
+  svg.setAttribute('width',W);
+  svg.setAttribute('height',totalH+4);
+  svg.style.cssText='position:absolute;top:0;left:0;pointer-events:none;z-index:6;overflow:visible;';
+
+  // Définitions des pointes de flèches
+  svg.innerHTML=`<defs>
+    <marker id="a-ok" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+      <path d="M0,0.5 L5,3 L0,5.5 Z" fill="#888780"/>
+    </marker>
+    <marker id="a-warn" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+      <path d="M0,0.5 L5,3 L0,5.5 Z" fill="#EF9F27"/>
+    </marker>
+    <marker id="a-err" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+      <path d="M0,0.5 L5,3 L0,5.5 Z" fill="#E24B4A"/>
+    </marker>
+  </defs>`;
+
+  deps.forEach(t=>{
+    const pred=taches.find(x=>x.id===t.dependsOn);
+    if(!pred)return;
+    const predIdx=taches.indexOf(pred);
+    const depIdx=taches.indexOf(t);
+    if(predIdx<0||depIdx<0)return;
+
+    // Point de départ : fin de la barre prédécesseur
+    const predFinFrac=diffD(mn,pDate(pred.fin))/total;
+    const x1=LW+predFinFrac*trackW;
+    const y1=rowMids[predIdx]||predIdx*46+23;
+
+    // Point d'arrivée : début de la barre dépendante
+    const depStartFrac=diffD(mn,pDate(t.debut))/total;
+    const x2=LW+depStartFrac*trackW;
+    const y2=rowMids[depIdx]||depIdx*46+23;
+
+    // Couleur selon état
+    const predDelayed=isDelayed(pred);
+    const depBlocked=isBlocked(t);
+    const color=predDelayed?'#E24B4A':depBlocked?'#EF9F27':'#888780';
+    const markerId=predDelayed?'a-err':depBlocked?'a-warn':'a-ok';
+
+    // Tracé en L : sortie droite → coude → arrivée gauche
+    const elbowX=Math.max(x1+6, x2-6, (x1+x2)/2);
+    const d=`M ${x1.toFixed(1)} ${y1.toFixed(1)} L ${elbowX.toFixed(1)} ${y1.toFixed(1)} L ${elbowX.toFixed(1)} ${y2.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+
+    const path=document.createElementNS(NS,'path');
+    path.setAttribute('d',d);
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke',color);
+    path.setAttribute('stroke-width','1.5');
+    path.setAttribute('stroke-dasharray','4,2.5');
+    path.setAttribute('marker-end',`url(#${markerId})`);
+    svg.appendChild(path);
+
+    // Petit cercle au point de départ
+    const circle=document.createElementNS(NS,'circle');
+    circle.setAttribute('cx',x1.toFixed(1));
+    circle.setAttribute('cy',y1.toFixed(1));
+    circle.setAttribute('r','3');
+    circle.setAttribute('fill',color);
+    svg.appendChild(circle);
+  });
+
+  inner.appendChild(svg);
+}
+
+function renderLegend(c){
+  const el=document.getElementById('legend');
+  const stIds=[...new Set(c.taches.map(t=>t.stId).filter(Boolean))];
+  if(!stIds.length){el.style.display='none';return;}
+  el.style.display='flex';
+  let html=stIds.map(id=>{const st=getST(id);if(!st)return'';return`<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;" onclick="openEditST(${id});switchView('st');" title="Voir le profil">
+    <span style="width:9px;height:9px;border-radius:2px;background:${st.color};"></span>${st.nom}</span>`;}).join('');
+  if(c.taches.some(t=>isDelayed(t)))
+    html+=`<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--danger-text);margin-left:8px;"><span style="width:9px;height:9px;border-radius:2px;background:var(--danger);"></span>En retard</span>`;
+  if(c.taches.some(t=>isBlocked(t)))
+    html+=`<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--warn-text);margin-left:4px;"><span style="font-size:11px;">🔗</span>En attente</span>`;
+  el.innerHTML=html;
+}
+
+// ============================================================
+// MODALS TACHES
+// ============================================================
+function depOptions(excludeId){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(!c||!c.taches.length)return'<option value="">— Aucune tâche disponible —</option>';
+  const opts=c.taches
+    .filter(t=>t.id!==excludeId)
+    .sort((a,b)=>a.debut.localeCompare(b.debut))
+    .map(t=>`<option value="${t.id}">${esc(t.nom)}  (fin : ${fmtShort(pDate(t.fin))})</option>`)
+    .join('');
+  return`<option value="">— Aucune dépendance —</option>${opts}`;
+}
+
+function stSelectOptions(selectedId){
+  return`<option value="">— Non assigné —</option>`+[...db.soustraitants].sort((a,b)=>a.nom.localeCompare(b.nom,'fr')).map(s=>`<option value="${s.id}"${s.id===selectedId?' selected':''}>${esc(s.nom)}${s.metier?' ('+esc(s.metier)+')':''}</option>`).join('');
+}
+
+function syncMinFin(){
+  const d=document.getElementById('f-debut').value;
+  const fin=document.getElementById('f-fin');
+  if(d){fin.min=d;if(fin.value&&fin.value<d)fin.value=d;}
+}
+
+function onDepChange(){
+  const tid=parseInt(document.getElementById('f-dep')?.value)||null;
+  const type=document.getElementById('f-dep-type')?.value||'FS';
+  const hint=document.getElementById('dep-date-hint');
+  const debutEl=document.getElementById('f-debut');
+  const finEl=document.getElementById('f-fin');
+
+  if(!tid){
+    // Pas de dépendance — retirer les contraintes
+    if(debutEl) debutEl.removeAttribute('min');
+    if(hint) hint.style.display='none';
+    return;
+  }
+
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const pred=c?.taches.find(x=>x.id===tid);
+  if(!pred)return;
+
+  let minDate;
+  if(type==='FS'){
+    // Commence après la FIN du prédécesseur
+    minDate=addD(pDate(pred.fin),1);
+  } else {
+    // Commence après le DÉBUT du prédécesseur (SS)
+    minDate=pDate(pred.debut);
+  }
+
+  const minStr=minDate.toISOString().slice(0,10);
+
+  // Appliquer le min sur le champ début
+  if(debutEl){
+    debutEl.min=minStr;
+    // Si la date actuelle est avant le minimum, la corriger
+    if(!debutEl.value||debutEl.value<minStr) debutEl.value=minStr;
+    // Propager au champ fin
+    syncMinFin();
+  }
+
+  // Afficher un bandeau d'info
+  if(hint){
+    const label=type==='FS'
+      ? `📅 Début au plus tôt le <strong>${fmtD(minDate)}</strong> (après la fin de &quot;${esc(pred.nom)}&quot;)`
+      : `📅 Début au plus tôt le <strong>${fmtD(minDate)}</strong> (après le début de &quot;${esc(pred.nom)}&quot;)`;
+    hint.innerHTML=label;
+    hint.style.display='block';
+  }
+
+  // En mode durée — pré-sélectionner la tâche dans "Se termine avant"
+  const finBeforeSel=document.getElementById('f-fin-before-task');
+  if(finBeforeSel&&type==='FS'){
+    // Chercher la première tâche qui commence après pred.fin
+    const c2=db.chantiers.find(x=>x.id===activeId);
+    finBeforeSel.value=''; // reset
+  }
+}
+
+function openAddTask(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const otherTaches=c?[...c.taches].sort((a,b)=>a.debut.localeCompare(b.debut)):[];
+  const finBeforeOpts=otherTaches.map(t=>`<option value="${t.id}">${t.nom}  (début : ${fmtShort(pDate(t.debut))})</option>`).join('');
+  showModal(`<div class="modal-title">Nouvelle tâche</div>
+    <div class="form-group"><label>Nom de la tâche *</label><input id="f-nom" type="text" placeholder="ex: Peinture finitions..."></div>
+    <div class="form-group"><label>Sous-traitant</label>
+      <select id="f-st">${stSelectOptions(null)}</select>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;">Sous-traitant manquant ? <a href="#" onclick="switchView('st');closeModal();return false;" style="color:var(--info-text);">Gérer →</a></div>
+    </div>
+
+    <!-- Toggle mode saisie -->
+    <div style="display:flex;gap:0;margin-bottom:10px;border:1px solid var(--border2);border-radius:var(--radius);overflow:hidden;">
+      <button id="mode-dates-btn" onclick="setTaskMode('dates')" style="flex:1;border:none;border-radius:0;padding:7px;font-size:12px;background:var(--accent);color:white;font-weight:600;">📅 Saisir les dates</button>
+      <button id="mode-duree-btn" onclick="setTaskMode('duree')" style="flex:1;border:none;border-radius:0;padding:7px;font-size:12px;background:var(--bg2);color:var(--text2);">⏱ Saisir la durée</button>
+    </div>
+
+    <!-- MODE DATES -->
+    <div id="mode-dates">
+      <div class="form-row">
+        <div class="form-group"><label>Début *</label><input id="f-debut" type="date" onchange="syncMinFin()"></div>
+        <div class="form-group"><label>Fin prévue *</label><input id="f-fin" type="date"></div>
+      </div>
+    </div>
+
+    <!-- MODE DURÉE -->
+    <div id="mode-duree" style="display:none;">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;">
+        <div class="form-group" style="margin-bottom:8px;">
+          <label>Durée en jours ouvrés *</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="f-duree" type="number" min="1" max="500" step="0.5" placeholder="ex: 32" style="width:90px;" oninput="updateDureeLabel()">
+            <span id="duree-label" style="font-size:11px;color:var(--text2);font-style:italic;"></span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+            ${[['1 sem.','5'],['2 sem.','10'],['3 sem.','15'],['1 mois','21'],['1.5 mois','32'],['2 mois','43'],['3 mois','65']].map(([l,v])=>
+              `<button type="button" onclick="setDuree(${v})" style="font-size:10px;padding:3px 8px;">${l}</button>`
+            ).join('')}
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Se termine avant *</label>
+          <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <button id="ctr-tache-btn" onclick="setContrainteMode('tache')" style="flex:1;font-size:11px;padding:5px;background:var(--accent);color:white;border-color:var(--accent);">Avant une tâche</button>
+            <button id="ctr-date-btn"  onclick="setContrainteMode('date')"  style="flex:1;font-size:11px;padding:5px;background:var(--bg);color:var(--text2);">Avant une date</button>
+          </div>
+          <div id="ctr-tache-div">
+            <select id="f-fin-before-task">
+              <option value="">— Choisir une tâche —</option>
+              ${finBeforeOpts}
+            </select>
+            <div style="font-size:10px;color:var(--text3);margin-top:3px;">La tâche se terminera juste avant le début de la tâche choisie.</div>
+          </div>
+          <div id="ctr-date-div" style="display:none;">
+            <input id="f-fin-before-date" type="date">
+            <div style="font-size:10px;color:var(--text3);margin-top:3px;">La tâche se terminera au plus tard à cette date.</div>
+          </div>
+        </div>
+      </div>
+      <div id="duree-preview" style="font-size:11px;color:var(--info-text);background:var(--info-bg);border-radius:var(--radius);padding:7px 10px;display:none;margin-bottom:8px;"></div>
+    </div>
+
+    <div class="form-group"><label>Avancement : <span id="aval">0%</span></label>
+      <input type="range" min="0" max="100" step="5" value="0" id="f-av" oninput="document.getElementById('aval').textContent=this.value+'%'"></div>
+    <div class="form-group" style="border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px;background:var(--bg2);">
+      <label style="font-weight:600;color:var(--text);margin-bottom:8px;">🔗 Dépendance</label>
+      <select id="f-dep" style="margin-bottom:6px;" onchange="onDepChange()">${depOptions(null)}</select>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <label style="font-size:11px;margin:0;color:var(--text2);white-space:nowrap;">Type :</label>
+        <select id="f-dep-type" style="flex:1;font-size:11px;" onchange="onDepChange()">
+          <option value="FS">Finit avant (attend la fin)</option>
+          <option value="SS">Commence avant (peut démarrer en parallèle)</option>
+        </select>
+      </div>
+      <div id="dep-date-hint" style="font-size:10px;color:var(--info-text);background:var(--info-bg);border-radius:5px;padding:5px 8px;margin-top:6px;display:none;"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border-radius:var(--radius);margin-bottom:4px;">
+      <input type="checkbox" id="f-locked" style="width:auto;height:16px;width:16px;cursor:pointer;accent-color:var(--accent);">
+      <label for="f-locked" style="margin:0;cursor:pointer;font-size:12px;color:var(--text);">🔒 Verrouiller la tâche</label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:14px;">
+      <button onclick="closeModal()">Annuler</button>
+      <button onclick="saveTask()" class="primary">Ajouter</button>
+    </div>`);
+}
+
+// -- Helpers pour le toggle mode saisie --
+window._taskMode='dates';
+window._contrainteMode='tache';
+
+function setTaskMode(mode){
+  window._taskMode=mode;
+  document.getElementById('mode-dates').style.display=mode==='dates'?'block':'none';
+  document.getElementById('mode-duree').style.display=mode==='duree'?'block':'none';
+  document.getElementById('mode-dates-btn').style.cssText='flex:1;border:none;border-radius:0;padding:7px;font-size:12px;'+(mode==='dates'?'background:var(--accent);color:white;font-weight:600;':'background:var(--bg2);color:var(--text2);');
+  document.getElementById('mode-duree-btn').style.cssText='flex:1;border:none;border-radius:0;padding:7px;font-size:12px;'+(mode==='duree'?'background:var(--accent);color:white;font-weight:600;':'background:var(--bg2);color:var(--text2);');
+}
+
+function setContrainteMode(mode){
+  window._contrainteMode=mode;
+  document.getElementById('ctr-tache-div').style.display=mode==='tache'?'block':'none';
+  document.getElementById('ctr-date-div').style.display=mode==='date'?'block':'none';
+  document.getElementById('ctr-tache-btn').style.cssText='flex:1;font-size:11px;padding:5px;'+(mode==='tache'?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--bg);color:var(--text2);');
+  document.getElementById('ctr-date-btn').style.cssText='flex:1;font-size:11px;padding:5px;'+(mode==='date'?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--bg);color:var(--text2);');
+  updateDureePreview();
+}
+
+function setDuree(v){
+  document.getElementById('f-duree').value=v;
+  updateDureeLabel();updateDureePreview();
+}
+
+function updateDureeLabel(){
+  const n=parseFloat(document.getElementById('f-duree')?.value)||0;
+  const el=document.getElementById('duree-label');
+  if(el)el.textContent=n>0?'≈ '+workingDaysLabel(Math.round(n)):'';
+  updateDureePreview();
+}
+
+function updateDureePreview(){
+  const prev=document.getElementById('duree-preview');
+  if(!prev)return;
+  const n=Math.round(parseFloat(document.getElementById('f-duree')?.value)||0);
+  if(!n){prev.style.display='none';return;}
+  let endDate=null;
+  if(window._contrainteMode==='tache'){
+    const tid=parseInt(document.getElementById('f-fin-before-task')?.value)||null;
+    if(tid){
+      const c=db.chantiers.find(x=>x.id===activeId);
+      const tref=c?.taches.find(x=>x.id===tid);
+      if(tref) endDate=addD(pDate(tref.debut),-1);
+    }
+  } else {
+    const dv=document.getElementById('f-fin-before-date')?.value;
+    if(dv) endDate=pDate(dv);
+  }
+  if(!endDate){prev.style.display='none';return;}
+  const startDate=subtractWorkingDays(endDate,n);
+  prev.style.display='block';
+  prev.innerHTML=`📅 Début calculé : <strong>${fmtD(startDate)}</strong> → Fin : <strong>${fmtD(endDate)}</strong> (${n} jours ouvrés)`;
+}
+
+function saveTask(){
+  const nom=document.getElementById('f-nom').value.trim();
+  const stId=parseInt(document.getElementById('f-st').value)||null;
+  const avancement=parseInt(document.getElementById('f-av').value)||0;
+  const locked=document.getElementById('f-locked')?.checked||false;
+  const dependsOn=parseInt(document.getElementById('f-dep')?.value)||null;
+  const depType=document.getElementById('f-dep-type')?.value||'FS';
+  if(!nom){toast('Le nom est requis.');return;}
+
+  let debut, fin;
+  const mode=window._taskMode||'dates';
+
+  if(mode==='dates'){
+    debut=document.getElementById('f-debut').value;
+    fin=document.getElementById('f-fin').value;
+    if(!debut||!fin){toast('Les dates sont requises.');return;}
+    if(debut>fin){toast('La date de début doit être avant la fin.');return;}
+  } else {
+    // Mode durée
+    const nDays=Math.round(parseFloat(document.getElementById('f-duree')?.value)||0);
+    if(!nDays||nDays<1){toast('Indiquez une durée en jours ouvrés.');return;}
+    let endDate=null;
+    if(window._contrainteMode==='tache'){
+      const tid=parseInt(document.getElementById('f-fin-before-task')?.value)||null;
+      if(!tid){toast('Choisissez une tâche de référence.');return;}
+      const c2=db.chantiers.find(x=>x.id===activeId);
+      const tref=c2?.taches.find(x=>x.id===tid);
+      if(!tref){toast('Tâche introuvable.');return;}
+      endDate=addD(pDate(tref.debut),-1);
+    } else {
+      const dv=document.getElementById('f-fin-before-date')?.value;
+      if(!dv){toast('Choisissez une date limite.');return;}
+      endDate=pDate(dv);
+    }
+    const startDate=subtractWorkingDays(endDate,nDays);
+    debut=startDate.toISOString().slice(0,10);
+    fin=endDate.toISOString().slice(0,10);
+    if(debut>fin){toast('Durée trop longue par rapport à la contrainte.');return;}
+  }
+
+  const c=db.chantiers.find(x=>x.id===activeId);
+  c.taches.push({id:nextTaskId(c),nom,stId,debut,fin,avancement,locked,dependsOn,depType});
+  saveDB();closeModal();selectC(activeId);toast('Tâche ajoutée !');
+}
+
+function openEdit(tid){
+  const c=db.chantiers.find(x=>x.id===activeId),t=c.taches.find(x=>x.id===tid);if(!t)return;
+  const delayed=isDelayed(t),ep=expectedPct(t),durJ=diffD(pDate(t.debut),pDate(t.fin));
+  const blocked=isBlocked(t), pred=getPred(t);
+  // Build dep select with current value
+  const depOpts=c.taches
+    .filter(x=>x.id!==tid)
+    .sort((a,b)=>a.debut.localeCompare(b.debut))
+    .map(x=>`<option value="${x.id}"${t.dependsOn===x.id?' selected':''}>${esc(x.nom)}  (fin : ${fmtShort(pDate(x.fin))})</option>`)
+    .join('');
+  showModal(`<div class="modal-title">Modifier — ${esc(t.nom)}</div>
+    ${delayed?`<div style="background:var(--danger-bg);border:1px solid var(--danger-border);border-radius:var(--radius);padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--danger-text);">⚠ Retard estimé : ~${delayDays(t)}j · Attendu : ${ep}% · Réalisé : ${t.avancement}%</div>`:''}
+    ${blocked?`<div style="background:var(--warn-bg);border:1px solid var(--warn-text);border-radius:var(--radius);padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--warn-text);">🔗 En attente : <strong>${esc(pred.nom)}</strong> (avancement : ${pred.avancement}%) — cette tâche est bloquée.</div>`:''}
+    <div class="form-group"><label>Nom</label><input id="f-nom" type="text" value="${esc(t.nom)}"></div>
+    <div class="form-group"><label>Sous-traitant</label>
+      <select id="f-st">${stSelectOptions(t.stId)}</select>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;"><a href="#" onclick="switchView('st');closeModal();return false;" style="color:var(--info-text);">Gérer les sous-traitants →</a></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Début</label><input id="f-debut" type="date" value="${t.debut}" onchange="syncMinFin()"></div>
+      <div class="form-group"><label>Fin</label><input id="f-fin" type="date" value="${t.fin}" min="${t.debut}"></div>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">Durée : <strong>${durJ} jours</strong></div>
+    <div class="form-group"><label>Avancement : <span id="aval">${t.avancement}%</span></label>
+      <input type="range" min="0" max="100" step="5" value="${t.avancement}" id="f-av" oninput="document.getElementById('aval').textContent=this.value+'%'"></div>
+    <div class="form-group" style="border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px;background:var(--bg2);">
+      <label style="font-weight:600;color:var(--text);margin-bottom:8px;">🔗 Dépendance</label>
+      <select id="f-dep" style="margin-bottom:6px;" onchange="onDepChange()"><option value="">— Aucune dépendance —</option>${depOpts}</select>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <label style="font-size:11px;margin:0;color:var(--text2);white-space:nowrap;">Type :</label>
+        <select id="f-dep-type" style="flex:1;font-size:11px;" onchange="onDepChange()">
+          <option value="FS"${(t.depType||'FS')==='FS'?' selected':''}>Finit avant (attend la fin)</option>
+          <option value="SS"${t.depType==='SS'?' selected':''}>Commence avant (peut démarrer en parallèle)</option>
+        </select>
+      </div>
+      <div id="dep-date-hint" style="font-size:10px;color:var(--info-text);background:var(--info-bg);border-radius:5px;padding:5px 8px;margin-top:6px;${t.dependsOn?'':'display:none;'}"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border-radius:var(--radius);margin-bottom:4px;">
+      <input type="checkbox" id="f-locked" ${t.locked?'checked':''} style="width:auto;height:16px;width:16px;cursor:pointer;accent-color:var(--accent);">
+      <label for="f-locked" style="margin:0;cursor:pointer;font-size:12px;color:var(--text);">🔒 Verrouiller <span style="font-size:10px;color:var(--text2);">(non déplaçable, jamais en retard)</span></label>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:14px;">
+      <button onclick="delTask(${tid})" class="danger-btn">Supprimer</button>
+      <div style="display:flex;gap:7px;">
+        <button onclick="closeModal()">Annuler</button>
+        <button onclick="updTask(${tid})" class="primary">Enregistrer</button>
+      </div>
+    </div>`);
+  // Appliquer la contrainte de date si dépendance existante
+  if(t.dependsOn) setTimeout(onDepChange, 30);
+}
+
+function updTask(tid){
+  const nom=document.getElementById('f-nom').value.trim();
+  const stId=parseInt(document.getElementById('f-st').value)||null;
+  const debut=document.getElementById('f-debut').value,fin=document.getElementById('f-fin').value;
+  const avancement=parseInt(document.getElementById('f-av').value)||0;
+  const locked=document.getElementById('f-locked')?.checked||false;
+  const dependsOn=parseInt(document.getElementById('f-dep')?.value)||null;
+  const depType=document.getElementById('f-dep-type')?.value||'FS';
+  if(!nom||!debut||!fin){toast('Champs requis.');return;}
+  const c=db.chantiers.find(x=>x.id===activeId),t=c.taches.find(x=>x.id===tid);
+  Object.assign(t,{nom,stId,debut,fin,avancement,locked,dependsOn,depType});
+  saveDB();closeModal();selectC(activeId);toast('Tâche mise à jour !');
+}
+
+function delTask(tid){
+  if(!confirm('Supprimer cette tâche ?'))return;
+  const c=db.chantiers.find(x=>x.id===activeId);
+  c.taches=c.taches.filter(x=>x.id!==tid);
+  saveDB();closeModal();selectC(activeId);toast('Tâche supprimée.');
+}
+
+function openNewChantier(){
+  showModal(`<div class="modal-title">Nouveau chantier</div>
+    <div class="form-group"><label>Nom *</label><input id="c-nom" type="text" placeholder="ex: Villa Mon Rêve"></div>
+    <div class="form-group"><label>Client</label><input id="c-client" type="text" placeholder="ex: M. Martin"></div>
+    <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:14px;">
+      <button onclick="closeModal()">Annuler</button>
+      <button onclick="saveChantier()" class="primary">Créer</button>
+    </div>`);
+}
+
+function saveChantier(){
+  const nom=document.getElementById('c-nom').value.trim();
+  if(!nom){toast('Le nom est requis.');return;}
+  const nid=Math.max(0,...db.chantiers.map(c=>c.id))+1;
+  db.chantiers.push({id:nid,nom,client:document.getElementById('c-client').value.trim()||'—',taches:[],archived:false});
+  saveDB();closeModal();renderSidebar();selectC(nid);toast('Chantier créé !');
+}
+
+function openChantierSettings(){
+  const c=db.chantiers.find(x=>x.id===activeId);if(!c)return;
+  const isArchived=!!c.archived;
+  const nc=(c.contraintes||[]).length;
+  showModal(`
+    <div class="modal-title">⚙ ${c.nom}</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:14px;">Client : ${c.client} · ${c.taches.length} tâche(s)</div>
+
+    <div style="display:flex;flex-direction:column;gap:7px;">
+
+      <button onclick="openRenameChantier()" style="text-align:left;padding:10px 12px;font-size:13px;">
+        ✏️ &nbsp;Renommer le chantier
+      </button>
+
+      <button onclick="openAccessConstraints()" style="text-align:left;padding:10px 12px;font-size:13px;background:${nc?'var(--warn-bg)':'var(--bg)'};border-color:${nc?'var(--warn-text)':'var(--border2)'};color:${nc?'var(--warn-text)':'var(--text)'};">
+        🚫 &nbsp;Contraintes d'accès <span style="font-size:11px;font-weight:400;">${nc?nc+' période(s) configurée(s)':'(inaccessible, accès partiel…)'}</span>
+      </button>
+
+      ${isArchived
+        ? `<button onclick="unarchiveChantier()" class="primary" style="text-align:left;padding:10px 12px;font-size:13px;">
+            📤 &nbsp;Désarchiver — remettre en actif
+           </button>`
+        : `<button onclick="archiveChantier()" style="text-align:left;padding:10px 12px;font-size:13px;background:var(--warn-bg);border-color:var(--warn-text);color:var(--warn-text);">
+            📦 &nbsp;Archiver ce chantier <span style="font-size:11px;font-weight:400;">(conservé, non modifiable)</span>
+           </button>`
+      }
+
+      <button onclick="deleteChantier()" class="danger-btn" style="text-align:left;padding:10px 12px;font-size:13px;">
+        🗑 &nbsp;Supprimer définitivement <span style="font-size:11px;font-weight:400;">(toutes les tâches seront perdues)</span>
+      </button>
+
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+      <button onclick="closeModal()">Fermer</button>
+    </div>
+  `);
+}
+
+function openRenameChantier(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  showModal(`
+    <div class="modal-title">Renommer le chantier</div>
+    <div class="form-group"><label>Nom du chantier</label><input id="c-nom" type="text" value="${c.nom}"></div>
+    <div class="form-group"><label>Client</label><input id="c-client" type="text" value="${c.client}"></div>
+    <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:14px;">
+      <button onclick="openChantierSettings()">Annuler</button>
+      <button onclick="renameChantier()" class="primary">Enregistrer</button>
+    </div>`);
+}
+
+function renameChantier(){
+  const nom=document.getElementById('c-nom').value.trim();
+  if(!nom){toast('Le nom est requis.');return;}
+  const c=db.chantiers.find(x=>x.id===activeId);
+  c.nom=nom; c.client=document.getElementById('c-client').value.trim()||'—';
+  saveDB();closeModal();selectC(activeId);renderSidebar();toast('Chantier renommé !');
+}
+
+function archiveChantier(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  c.archived=true;
+  saveDB();closeModal();
+  document.getElementById('h-name').textContent=c.nom+' 📦';
+  document.getElementById('h-meta').textContent=`Client : ${c.client} · ${c.taches.length} tâche(s) · Archivé`;
+  document.getElementById('btn-add').disabled=true;
+  renderSidebar();
+  toast('Chantier archivé. Visible dans la section Archives.');
+}
+
+function unarchiveChantier(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  c.archived=false;
+  saveDB();closeModal();selectC(activeId);renderSidebar();
+  toast('Chantier remis en actif !');
+}
+
+function deleteChantier(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(!confirm(`⚠ Supprimer définitivement "${c.nom}" et toutes ses ${c.taches.length} tâche(s) ?\n\nCette action est irréversible.`))return;
+  db.chantiers=db.chantiers.filter(x=>x.id!==activeId);
+  activeId=null;
+  saveDB();closeModal();
+  // Reset main panel
+  document.getElementById('h-name').textContent='Sélectionnez un chantier';
+  document.getElementById('h-meta').textContent='';
+  document.getElementById('btn-share').disabled=true;
+  document.getElementById('btn-add').disabled=true;
+  document.getElementById('btn-export').style.display='none';
+  document.getElementById('btn-settings').disabled=true;
+  document.getElementById('btn-alerts').style.display='none';
+  document.getElementById('alerts-panel').style.display='none';
+  document.getElementById('gantt').style.display='none';
+  document.getElementById('gantt-empty').style.display='block';
+  document.getElementById('legend').style.display='none';
+  renderSidebar();
+  // Auto-select first remaining
+  if(db.chantiers.length) selectC(db.chantiers[0].id);
+  toast('Chantier supprimé.');
+}
+
+// ============================================================
+// CONTRAINTES D'ACCÈS
+// ============================================================
+function openAccessConstraints(){
+  const c=db.chantiers.find(x=>x.id===activeId);if(!c)return;
+  if(!c.contraintes)c.contraintes=[];
+  const rows=c.contraintes.length ? c.contraintes.map((ct,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid ${ct.type==='inaccessible'?'var(--danger-border)':'var(--warn-text)'};border-radius:var(--radius);margin-bottom:5px;">
+      <span style="font-size:16px;">${ct.type==='inaccessible'?'🚫':'⚠️'}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;color:var(--text);">${ct.type==='inaccessible'?'Inaccessible':'Accès partiel'}</div>
+        <div style="font-size:11px;color:var(--text2);">${fmtShort(pDate(ct.debut))} → ${fmtShort(pDate(ct.fin))}${ct.note?' · '+ct.note:''}</div>
+      </div>
+      <button onclick="deleteAccessConstraint(${i})" class="danger-btn" style="font-size:11px;padding:3px 8px;">✕</button>
+    </div>`).join('') : '<div style="font-size:12px;color:var(--text2);padding:8px 0;">Aucune contrainte d\'accès configurée.</div>';
+
+  showModal(`<div class="modal-title">🚫 Contraintes d'accès — ${c.nom}</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:12px;">Définissez les périodes où le chantier est inaccessible ou avec accès limité. Ces périodes s'affichent en surbrillance sur le Gantt.</p>
+    <div id="ct-list">${rows}</div>
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:8px;">
+      <p style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:8px;">Ajouter une période</p>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <button id="ct-type-inac" onclick="setCTType('inaccessible')" style="flex:1;padding:7px;font-size:12px;background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text);font-weight:600;">🚫 Inaccessible</button>
+        <button id="ct-type-part" onclick="setCTType('partiel')" style="flex:1;padding:7px;font-size:12px;">⚠️ Accès partiel</button>
+      </div>
+      <div class="form-row" style="margin-bottom:8px;">
+        <div class="form-group"><label>Début</label><input id="ct-debut" type="date" onchange="syncCTDates()"></div>
+        <div class="form-group"><label>Fin</label><input id="ct-fin" type="date"></div>
+      </div>
+      <div class="form-group"><label>Note (optionnel) — ex: "Chambre 1 seulement", "Occupé le matin"</label>
+        <input id="ct-note" type="text" placeholder="Précisez la zone ou la raison..."></div>
+      <button onclick="addAccessConstraint()" class="primary" style="width:100%;padding:7px;margin-top:4px;">+ Ajouter cette contrainte</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+      <button onclick="closeModal();selectC(activeId);">Fermer</button>
+    </div>`);
+  window._ctType='inaccessible';
+}
+
+let _ctType='inaccessible';
+function setCTType(t){
+  _ctType=t;
+  document.getElementById('ct-type-inac').style.cssText='flex:1;padding:7px;font-size:12px;'+(t==='inaccessible'?'background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text);font-weight:600;':'background:var(--bg);color:var(--text2);');
+  document.getElementById('ct-type-part').style.cssText='flex:1;padding:7px;font-size:12px;'+(t==='partiel'?'background:var(--warn-bg);border-color:var(--warn-text);color:var(--warn-text);font-weight:600;':'background:var(--bg);color:var(--text2);');
+}
+function syncCTDates(){
+  const d=document.getElementById('ct-debut').value;
+  const fin=document.getElementById('ct-fin');
+  if(d){fin.min=d;if(fin.value&&fin.value<d)fin.value=d;}
+}
+function addAccessConstraint(){
+  const debut=document.getElementById('ct-debut').value;
+  const fin=document.getElementById('ct-fin').value;
+  const note=document.getElementById('ct-note').value.trim();
+  if(!debut||!fin){toast('Les dates sont requises.');return;}
+  if(debut>fin){toast('Date de début après la fin.');return;}
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(!c.contraintes)c.contraintes=[];
+  c.contraintes.push({debut,fin,type:_ctType,note});
+  c.contraintes.sort((a,b)=>a.debut.localeCompare(b.debut));
+  saveDB();openAccessConstraints();
+}
+function deleteAccessConstraint(idx){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  c.contraintes.splice(idx,1);
+  saveDB();openAccessConstraints();
+}
+
+// ============================================================
+// EXPORT
+// ============================================================
+function openExport(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const stIds=[...new Set(c.taches.map(t=>t.stId).filter(Boolean))];
+  showModal(`<div class="modal-title">Exporter / Partager — ${c.nom}</div>
+    <div class="export-section">
+      <div class="section-label">Export PDF</div>
+      <div style="display:flex;gap:7px;margin-bottom:6px;">
+        <button onclick="exportPDF('full')" style="flex:1;">Planning complet</button>
+        <button onclick="exportPDF('delayed')" class="danger-btn" style="flex:1;">⚠ Retards seuls</button>
+      </div>
+      <button onclick="exportPDFByMonth()" style="width:100%;text-align:left;padding:8px 12px;background:var(--green-bg);border-color:var(--green-border);color:var(--green-text);">📅 Par mois — un PDF par mois (meilleure lisibilité)</button>
+    </div>
+    <div class="export-section">
+      <div class="section-label">Partager par sous-traitant</div>
+      ${stIds.length?stIds.map(id=>{
+        const st=getST(id);if(!st)return'';
+        return`<div class="st-share-row">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+            <span style="width:10px;height:10px;border-radius:2px;background:${st.color};flex-shrink:0;"></span>
+            <div><div style="font-size:12px;font-weight:600;">${st.nom}</div>
+            <div style="font-size:10px;color:var(--text2);">${st.metier||''} · ${st.email||'pas d\'email'}</div></div>
+          </div>
+          <div style="display:flex;gap:5px;flex-shrink:0;">
+            <button onclick="exportSTPDF(${id})" style="font-size:11px;padding:4px 9px;">PDF ↓</button>
+            ${st.email?`<button onclick="shareST(${id})" class="primary" style="font-size:11px;padding:4px 9px;">✉ Email</button>`:`<button onclick="closeModal();openEditST(${id});" style="font-size:11px;padding:4px 9px;color:var(--warn-text);">+ Ajouter email</button>`}
+          </div>
+        </div>`;
+      }).join(''):'<div style="font-size:12px;color:var(--text2);">Aucun sous-traitant assigné.</div>'}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:6px;"><button onclick="closeModal()">Fermer</button></div>`);
+}
+
+function generatePDF(c, filterStId, filename, monthFilter){
+  const {jsPDF}=window.jspdf;
+  let tasks=(filterStId!==undefined?c.taches.filter(t=>t.stId===filterStId):[...c.taches])
+    .sort((a,b)=>a.debut.localeCompare(b.debut));
+  if(monthFilter){
+    // Garder uniquement les tâches qui chevauchent ce mois
+    const mStart=new Date(monthFilter.year,monthFilter.month,1);
+    const mEnd=new Date(monthFilter.year,monthFilter.month+1,0);
+    tasks=tasks.filter(t=>pDate(t.fin)>=mStart&&pDate(t.debut)<=mEnd);
+  }
+  if(!tasks.length){toast('Aucune tâche pour cette période.');return;}
+
+  // ── Mise en page ─────────────────────────────────────
+  const PW=297;
+  const LW=78;
+  const BAR_W=PW-LW-5;
+  const ROW=13;
+  const HDR=32;
+  const LEGFOOT=10;
+  const PH=Math.max(HDR+tasks.length*ROW+LEGFOOT+3,80);
+
+  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:[PH,PW]});
+
+  // Plage de dates
+  let mn, mx;
+  if(monthFilter){
+    mn=new Date(monthFilter.year,monthFilter.month,1);
+    mx=new Date(monthFilter.year,monthFilter.month+1,0);
+    // Snap mn au lundi précédent
+    const dow=mn.getDay(); mn=addD(mn,-(dow===0?6:dow-1));
+    mx=addD(mx,7);
+  } else {
+    const allD=tasks.flatMap(t=>[pDate(t.debut),pDate(t.fin)]);
+    mn=new Date(Math.min(...allD)); mx=new Date(Math.max(...allD));
+    const dow=mn.getDay(); mn=addD(mn,-(dow===0?6:dow-1));
+    mn=addD(mn,-7); mx=addD(mx,14);
+  }
+  const totalDays=Math.max(diffD(mn,mx),1);
+  const today=new Date();
+
+  // Fond blanc
+  pdf.setFillColor(255,255,255); pdf.rect(0,0,PW,PH+5,'F');
+
+  // ── Titre (sobre, fond blanc) ─────────────────────────
+  pdf.setFont('helvetica','bold'); pdf.setFontSize(12); pdf.setTextColor(26,26,24);
+  const stLabel=(filterStId&&getST(filterStId))?(getST(filterStId).nom+' — '):'';
+  const mLabel=monthFilter?' — '+new Date(monthFilter.year,monthFilter.month,1).toLocaleString('fr',{month:'long',year:'numeric'}):'';
+  pdf.text(stLabel+c.nom+mLabel, 4, 9);
+  pdf.setFont('helvetica','normal'); pdf.setFontSize(6.5); pdf.setTextColor(120,118,112);
+  pdf.text('Client : '+c.client+'   |   Genere le '+fmtD(new Date()), 4, 14);
+  // Séparateur fin
+  pdf.setDrawColor(200,198,193); pdf.setLineWidth(0.4);
+  pdf.line(0,16,PW,16);
+
+  // ── En-tête mois ──────────────────────────────────────
+  // Bande légère pour les mois
+  pdf.setFillColor(248,248,246);
+  pdf.rect(LW,17,BAR_W,7,'F');
+  let cur=new Date(mn), prevM=-1;
+  while(cur<=mx){
+    const px=LW+diffD(mn,cur)/totalDays*BAR_W;
+    if(cur.getMonth()!==prevM){
+      prevM=cur.getMonth();
+      pdf.setDrawColor(175,173,168); pdf.setLineWidth(0.5);
+      pdf.line(px,17,px,HDR+tasks.length*ROW);
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(7); pdf.setTextColor(55,53,48);
+      const ml=cur.toLocaleString('fr',{month:'long',year:'numeric'});
+      pdf.text(ml.charAt(0).toUpperCase()+ml.slice(1), px+1.5, 22.5);
+    }
+    cur=addD(cur,7);
+  }
+
+  // ── Ligne des semaines dd/mm ───────────────────────────
+  pdf.setFillColor(255,255,255);
+  pdf.rect(LW,24,BAR_W,HDR-24,'F');
+  cur=new Date(mn);
+  while(cur<=mx){
+    const px=LW+diffD(mn,cur)/totalDays*BAR_W;
+    const dd=String(cur.getDate()).padStart(2,'0');
+    const mm2=String(cur.getMonth()+1).padStart(2,'0');
+    pdf.setFont('helvetica','bold'); pdf.setFontSize(5.5); pdf.setTextColor(90,88,83);
+    pdf.text(dd+'/'+mm2, px-3, 30);
+    // Trait de semaine
+    pdf.setDrawColor(195,193,188); pdf.setLineWidth(0.35);
+    pdf.line(px,24,px,HDR);
+    // Grille légère sur les lignes
+    pdf.setDrawColor(228,226,221); pdf.setLineWidth(0.15);
+    pdf.line(px,HDR,px,HDR+tasks.length*ROW);
+    cur=addD(cur,7);
+  }
+
+  // Bordure basse de l'en-tête
+  pdf.setDrawColor(175,173,168); pdf.setLineWidth(0.5);
+  pdf.line(0,HDR,PW,HDR);
+
+  // En-tête label
+  pdf.setFont('helvetica','bold'); pdf.setFontSize(6.5); pdf.setTextColor(55,53,48);
+  pdf.text('TACHE  |  Dates', 4, 21);
+
+  // Ligne aujourd'hui
+  const tf=diffD(mn,today)/totalDays;
+  if(tf>=0&&tf<=1){
+    const tx=LW+tf*BAR_W;
+    pdf.setDrawColor(210,55,52); pdf.setLineWidth(0.8);
+    pdf.line(tx,HDR-2,tx,HDR+tasks.length*ROW);
+    pdf.setFillColor(210,55,52);
+    pdf.triangle(tx-2,HDR-2,tx+2,HDR-2,tx,HDR+1,'F');
+    pdf.setFont('helvetica','bold'); pdf.setFontSize(5); pdf.setTextColor(210,55,52);
+    pdf.text('Auj.',tx-3.5,HDR-3);
+  }
+
+  // ── Lignes de tâches ─────────────────────────────────
+  tasks.forEach((t,i)=>{
+    const y=HDR+i*ROW;
+    const delayed=isDelayed(t), locked=!!t.locked, done=t.avancement;
+    const ts=pDate(t.debut), te=pDate(t.fin);
+    const durJ=taskDur(t.debut,t.fin);
+
+    // Clamp les dates si export mensuel
+    const visStart=monthFilter?new Date(Math.max(ts,mn)):ts;
+    const visEnd=monthFilter?new Date(Math.min(te,mx)):te;
+
+    const lx=LW+diffD(mn,ts)/totalDays*BAR_W;
+    const visLx=LW+diffD(mn,visStart)/totalDays*BAR_W;
+    const bw=Math.max((diffD(ts,te)+1)/totalDays*BAR_W, 2);
+    const visBw=Math.max((diffD(visStart,visEnd)+1)/totalDays*BAR_W, 2);
+    const[r,g,b]=hexToRgb(stColor(t.stId));
+    const stNom=stName(t.stId);
+
+    // Séparateur
+    pdf.setDrawColor(225,223,218); pdf.setLineWidth(0.2);
+    pdf.line(0,y+ROW,PW,y+ROW);
+
+    // Bande latérale colorée (3mm)
+    const[ar,ag,ab]=delayed?[210,55,52]:locked?[140,138,132]:[r,g,b];
+    pdf.setFillColor(ar,ag,ab); pdf.rect(0,y,2.5,ROW,'F');
+
+    // ── Colonne label : TACHE + dates uniquement ──
+    const lx0=4;
+    // Nom tâche
+    pdf.setFont('helvetica','bold'); pdf.setFontSize(8);
+    pdf.setTextColor(delayed?150:26, delayed?38:26, delayed?38:24);
+    const maxC=40;
+    const pfx=delayed?'[!] ':locked?'[F] ':'';
+    const lbl=t.nom.length>maxC?t.nom.slice(0,maxC-1)+'...':t.nom;
+    pdf.text(pfx+lbl, lx0, y+5.5);
+    // Dates
+    pdf.setFont('helvetica','normal'); pdf.setFontSize(6); pdf.setTextColor(130,128,122);
+    const d1=String(ts.getDate()).padStart(2,'0')+'/'+String(ts.getMonth()+1).padStart(2,'0');
+    const d2=String(te.getDate()).padStart(2,'0')+'/'+String(te.getMonth()+1).padStart(2,'0');
+    pdf.text(d1+' au '+d2+'  ('+durJ+'j)', lx0, y+10);
+
+    // ── Barre Gantt ──
+    // Fond clair
+    const fc=Math.round;
+    pdf.setFillColor(fc(r+(255-r)*0.82),fc(g+(255-g)*0.82),fc(b+(255-b)*0.82));
+    pdf.roundedRect(visLx, y+2, visBw, 9, 1.2, 1.2, 'F');
+
+    // Bordure si verrouillé
+    if(locked){pdf.setDrawColor(140,138,132);pdf.setLineWidth(0.4);pdf.roundedRect(visLx,y+2,visBw,9,1.2,1.2,'D');}
+
+    // Progression
+    if(done>0){
+      const pw=Math.max(visBw*done/100, 2);
+      pdf.setFillColor(delayed?210:locked?140:[r][0], delayed?55:locked?138:[g][0], delayed?52:locked?132:[b][0]);
+      if(delayed){pdf.setFillColor(210,55,52);}
+      else if(locked){pdf.setFillColor(140,138,132);}
+      else{pdf.setFillColor(r,g,b);}
+      pdf.roundedRect(visLx, y+2, pw, 9, 1.2, 1.2, 'F');
+    }
+
+    // Nom ST dans la barre
+    if(visBw>16 && stNom && stNom!=='—'){
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(6.5); pdf.setTextColor(255,255,255);
+      const maxW=Math.floor((visBw-4)/1.9);
+      const bl=stNom.length>maxW?stNom.slice(0,maxW)+'...':stNom;
+      pdf.text(bl, visLx+2.5, y+8);
+    }
+  });
+
+  // ── Légende compacte ──────────────────────────────────
+  const legY=HDR+tasks.length*ROW+1;
+  pdf.setDrawColor(200,198,193); pdf.setLineWidth(0.3);
+  pdf.line(0,legY,PW,legY);
+
+  const stIds=[...new Set(tasks.map(t=>t.stId).filter(Boolean))];
+  let lx2=4, ly2=legY+7;
+  stIds.forEach(id=>{
+    const st=getST(id); if(!st)return;
+    const[r2,g2,b2]=hexToRgb(st.color);
+    pdf.setFillColor(r2,g2,b2); pdf.roundedRect(lx2,ly2-3.5,3.5,3.5,0.6,0.6,'F');
+    pdf.setFont('helvetica','normal'); pdf.setFontSize(6); pdf.setTextColor(60,58,53);
+    pdf.text(st.nom, lx2+5, ly2);
+    lx2+=Math.max(st.nom.length*2.4+12,28);
+    if(lx2>PW-50){lx2=4; ly2+=7;}
+  });
+
+  pdf.save(filename+'.pdf');
+  toast('PDF telecharge !');
+}
+
+function exportPDF(mode){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const tmp=mode==='delayed'?{...c,taches:c.taches.filter(t=>isDelayed(t))}:c;
+  if(!tmp.taches.length){toast('Aucune tâche à exporter.');return;}
+  generatePDF(tmp,undefined,c.nom.replace(/\s+/g,'_')+(mode==='delayed'?'_retards':'_complet'),null);
+  closeModal();
+}
+
+function exportSTPDF(stId){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(!c.taches.some(t=>t.stId===stId)){toast('Aucune tâche pour ce sous-traitant.');return;}
+  generatePDF(c,stId,c.nom.replace(/\s+/g,'_')+'_'+(getST(stId)?.nom||'st').replace(/[^a-zA-Z0-9]/g,'_'),null);
+  closeModal();
+}
+
+function exportPDFByMonth(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(!c.taches.length){toast('Aucune tâche à exporter.');return;}
+  // Trouver tous les mois couverts par les tâches
+  const allD=c.taches.flatMap(t=>[pDate(t.debut),pDate(t.fin)]);
+  const minD=new Date(Math.min(...allD)), maxD=new Date(Math.max(...allD));
+  let cur=new Date(minD.getFullYear(),minD.getMonth(),1);
+  const end=new Date(maxD.getFullYear(),maxD.getMonth(),1);
+  const months=[];
+  while(cur<=end){months.push({year:cur.getFullYear(),month:cur.getMonth()});cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);}
+  if(!months.length){toast('Aucun mois à exporter.');return;}
+  // Générer un PDF par mois
+  let count=0;
+  months.forEach(m=>{
+    const tasks=c.taches.filter(t=>{
+      const mS=new Date(m.year,m.month,1),mE=new Date(m.year,m.month+1,0);
+      return pDate(t.fin)>=mS&&pDate(t.debut)<=mE;
+    });
+    if(tasks.length){
+      count++;
+      const mName=new Date(m.year,m.month,1).toLocaleString('fr',{month:'long',year:'numeric'});
+      generatePDF(c,undefined,c.nom.replace(/\s+/g,'_')+'_'+mName.replace(/\s+/g,'_'),m);
+    }
+  });
+  toast(count+' PDF genere'+( count>1?'s':'')+' !');
+  closeModal();
+}
+
+function shareST(stId){
+  const c=db.chantiers.find(x=>x.id===activeId),st=getST(stId);
+  if(!st||!st.email)return;
+  const tasks=c.taches.filter(t=>t.stId===stId);
+  const lines=tasks.map(t=>`• ${t.nom} : ${fmtD(pDate(t.debut))} → ${fmtD(pDate(t.fin))} (${diffD(pDate(t.debut),pDate(t.fin))}j) — Avancement : ${t.avancement}%`).join('\n');
+  window.location.href=`mailto:${st.email}?subject=${encodeURIComponent('Planning – '+st.nom+' – '+c.nom)}&body=${encodeURIComponent('Bonjour,\n\nVoici votre planning pour le chantier « '+c.nom+' » (client : '+c.client+').\n\n'+lines+'\n\nCordialement')}`;
+}
+
+// ============================================================
+// VUE D'ENSEMBLE
+// ============================================================
+function renderOverview(){
+  const actifs=db.chantiers.filter(c=>!c.archived);
+  const archives=db.chantiers.filter(c=>c.archived);
+  const totalDelays=actifs.reduce((s,c)=>s+c.taches.filter(t=>isDelayed(t)).length,0);
+  const totalTaches=actifs.reduce((s,c)=>s+c.taches.length,0);
+
+  document.getElementById('ov-subtitle').textContent=
+    `${actifs.length} chantier${actifs.length>1?'s':''} actif${actifs.length>1?'s':''}${archives.length?' · '+archives.length+' archivé'+( archives.length>1?'s':''):''}`;
+
+  // Indicateurs globaux
+  const avgProg=actifs.length?Math.round(actifs.reduce((s,c)=>s+chantierProgress(c),0)/actifs.length):0;
+  document.getElementById('ov-stats').innerHTML=`
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:120px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Chantiers actifs</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text);">${actifs.length}</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:120px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Avancement moyen</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text);">${avgProg}%</div>
+    </div>
+    <div style="background:${totalDelays?'var(--danger-bg)':'var(--bg)'};border:1px solid ${totalDelays?'var(--danger-border)':'var(--border)'};border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:120px;">
+      <div style="font-size:10px;color:${totalDelays?'var(--danger-text)':'var(--text2)'};text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Retards</div>
+      <div style="font-size:24px;font-weight:700;color:${totalDelays?'var(--danger-text)':'var(--text)'};">${totalDelays}</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:120px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Total tâches</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text);">${totalTaches}</div>
+    </div>`;
+
+  // Cartes chantiers
+  const allC=[...actifs,...archives];
+  document.getElementById('ov-grid').innerHTML=allC.map(c=>{
+    const prog=chantierProgress(c);
+    const status=chantierStatus(c);
+    const delayed=c.taches.filter(t=>isDelayed(t));
+    const blocked=c.taches.filter(t=>isBlocked(t));
+    const done=c.taches.filter(t=>t.avancement>=100);
+    // Prochaine tâche à démarrer ou en cours
+    const today=new Date();
+    const upcoming=c.taches
+      .filter(t=>t.avancement<100&&!isDelayed(t)&&!isBlocked(t))
+      .sort((a,b)=>a.debut.localeCompare(b.debut))[0];
+    const stIds=[...new Set(c.taches.map(t=>t.stId).filter(Boolean))];
+    return`<div style="background:var(--bg);border:1px solid ${c.archived?'var(--border)':'var(--border2)'};border-radius:var(--radius-lg);padding:16px;opacity:${c.archived?.6:1};transition:box-shadow .15s;" onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,.1)'" onmouseleave="this.style.boxShadow='none'">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
+        <div style="min-width:0;">
+          <div style="font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.nom}${c.archived?' 📦':''}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px;">${c.client}</div>
+        </div>
+        <span style="font-size:10px;font-weight:600;background:${status.bg};color:${status.color};border-radius:4px;padding:2px 8px;white-space:nowrap;flex-shrink:0;">${status.label}</span>
+      </div>
+      <!-- Barre de progression -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${prog}%;background:${prog>=100?'var(--green-text)':delayed.length?'var(--danger)':'var(--accent)'};border-radius:4px;transition:width .3s;"></div>
+        </div>
+        <span style="font-size:12px;font-weight:600;color:var(--text);flex-shrink:0;">${prog}%</span>
+      </div>
+      <!-- Stats -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;">
+        <span style="color:var(--text2);">${c.taches.length} tâche${c.taches.length>1?'s':''}</span>
+        ${done.length?`<span style="color:var(--green-text);">✓ ${done.length} terminée${done.length>1?'s':''}</span>`:''}
+        ${delayed.length?`<span style="color:var(--danger-text);">⚠ ${delayed.length} retard${delayed.length>1?'s':''}</span>`:''}
+        ${blocked.length?`<span style="color:var(--warn-text);">🔗 ${blocked.length} attente</span>`:''}
+      </div>
+      <!-- Prochaine tâche -->
+      ${upcoming?`<div style="font-size:11px;color:var(--text2);margin-bottom:10px;padding:6px 8px;background:var(--bg2);border-radius:var(--radius);">
+        <span style="color:var(--text3);">Prochain :</span> <strong>${upcoming.nom}</strong> — ${fmtShort(pDate(upcoming.debut))}
+        ${stIds.includes(upcoming.stId)?` · <span style="color:${stColor(upcoming.stId)};font-weight:600;">${stName(upcoming.stId)}</span>`:''}
+      </div>`:''}
+      <!-- Dots ST -->
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div style="display:flex;gap:3px;flex-wrap:wrap;">
+          ${stIds.slice(0,6).map(id=>`<span style="width:10px;height:10px;border-radius:50%;background:${stColor(id)};" title="${stName(id)}"></span>`).join('')}
+          ${stIds.length>6?`<span style="font-size:10px;color:var(--text3);">+${stIds.length-6}</span>`:''}
+        </div>
+        <button onclick="switchView('planning');selectC(${c.id});" style="font-size:12px;padding:5px 12px;background:var(--info-bg);border-color:var(--info-border);color:var(--info-text);">Ouvrir →</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// QUICK UPDATE POPUP
+// ============================================================
+function openQuickPopup(event, tid){
+  event.stopPropagation();
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const t=c?.taches.find(x=>x.id===tid);
+  if(!t)return;
+  window._qpTask=t;
+  window._qpChantier=c;
+  const col=stColor(t.stId);
+  const delayed=isDelayed(t), blocked=isBlocked(t);
+  document.getElementById('qp-header').innerHTML=`
+    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px;line-height:1.3;">${esc(t.nom)}</div>
+    <div style="font-size:11px;color:${col};font-weight:600;">${esc(stName(t.stId))}</div>
+    <div style="font-size:12px;font-weight:700;color:var(--text);margin-top:4px;">${t.avancement}%  <span style="font-size:10px;font-weight:400;color:var(--text2);">(${fmtShort(pDate(t.debut))} au ${fmtShort(pDate(t.fin))} · ${diffD(pDate(t.debut),pDate(t.fin))}j)</span></div>
+    ${delayed?'<div style="font-size:10px;color:var(--danger-text);margin-top:2px;">⚠ En retard</div>':''}
+    ${blocked?'<div style="font-size:10px;color:var(--warn-text);margin-top:2px;">🔗 En attente</div>':''}`;
+  updateQPBar();
+  // Bouton "Modifier en détail" — on stocke l'ID directement dans l'attribut onclick
+  document.getElementById('qp-edit-btn').onclick=function(){closeQuickPopup();openEdit(tid);};
+  // Position
+  const popup=document.getElementById('quick-popup');
+  popup.style.display='block';
+  const x=Math.min(event.clientX, window.innerWidth-310);
+  const y=Math.min(event.clientY+10, window.innerHeight-280);
+  popup.style.left=x+'px';
+  popup.style.top=y+'px';
+}
+
+function updateQPBar(){
+  const t=window._qpTask;
+  if(!t)return;
+  const col=stColor(t.stId);
+  const fill=document.getElementById('qp-fill');
+  if(fill){fill.style.width=t.avancement+'%';fill.style.background=isDelayed(t)?'var(--danger)':col;}
+  const pct=document.querySelector('#qp-header div:nth-child(3)');
+  if(pct) pct.innerHTML=`${t.avancement}%  <span style="font-size:10px;font-weight:400;color:var(--text2);">(${fmtShort(pDate(t.debut))} au ${fmtShort(pDate(t.fin))} · ${diffD(pDate(t.debut),pDate(t.fin))}j)</span>`;
+}
+
+function quickUpdateTask(delta){
+  const t=window._qpTask, c=window._qpChantier;
+  if(!t||!c)return;
+  const real=c.taches.find(x=>x.id===t.id);
+  if(!real)return;
+  real.avancement=Math.max(0,Math.min(100,real.avancement+delta));
+  window._qpTask=real;
+  saveDB();updateQPBar();
+  selectC(activeId);
+  if(document.getElementById('view-overview').classList.contains('active'))renderOverview();
+  toast(real.avancement+'%');
+}
+
+function quickExtendTask(days){
+  const t=window._qpTask, c=window._qpChantier;
+  if(!t||!c)return;
+  const real=c.taches.find(x=>x.id===t.id);
+  if(!real)return;
+  const newFin=addD(pDate(real.fin),days);
+  real.fin=newFin.toISOString().slice(0,10);
+  window._qpTask=real;
+  saveDB();updateQPBar();
+  selectC(activeId);
+  toast('Fin reportée au '+fmtShort(newFin));
+}
+
+function closeQuickPopup(){
+  document.getElementById('quick-popup').style.display='none';
+  window._qpTask=null;
+}
+
+// Fermer le popup en cliquant ailleurs
+document.addEventListener('click',e=>{
+  const popup=document.getElementById('quick-popup');
+  if(popup&&popup.style.display==='block'&&!popup.contains(e.target))closeQuickPopup();
+});
+
+// ============================================================
+// JOURS NON TRAVAILLÉS
+// ============================================================
+function openNonWorkingSettings(){
+  const nwd=db.nonWorkingDays||{skipWeekends:true,holidays:[]};
+  const hols=(nwd.holidays||[]).sort().join('\n');
+  showModal(`<div class="modal-title">📆 Jours non travaillés</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:12px;">Ces réglages affectent le calcul des retards (les jours non travaillés ne sont pas comptés).</p>
+    <div style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border-radius:var(--radius);margin-bottom:12px;">
+      <input type="checkbox" id="nwd-we" ${nwd.skipWeekends?'checked':''} style="width:auto;height:16px;width:16px;cursor:pointer;accent-color:var(--accent);">
+      <label for="nwd-we" style="margin:0;font-size:13px;cursor:pointer;">Exclure les weekends (samedi + dimanche)</label>
+    </div>
+    <div class="form-group">
+      <label>Jours fériés (un par ligne, format AAAA-MM-JJ)</label>
+      <textarea id="nwd-hols" rows="8" style="width:100%;font-family:monospace;font-size:11px;padding:8px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--bg);color:var(--text);resize:vertical;">${hols}</textarea>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;">Exemple : 2026-07-21 (Fête nationale belge)</div>
+    </div>
+    <div style="display:flex;gap:7px;margin-bottom:8px;">
+      <button onclick="loadBelgianHolidays()" style="font-size:11px;flex:1;">🇧🇪 Recharger fériés belges</button>
+      <button onclick="document.getElementById('nwd-hols').value=''" style="font-size:11px;flex:1;">Vider la liste</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:12px;">
+      <button onclick="closeModal()">Annuler</button>
+      <button onclick="saveNonWorking()" class="primary">Enregistrer</button>
+    </div>`);
+}
+
+function loadBelgianHolidays(){
+  document.getElementById('nwd-hols').value=HOLIDAYS_BELGIQUE.join('\n');
+}
+
+function saveNonWorking(){
+  const skipWE=document.getElementById('nwd-we').checked;
+  const lines=document.getElementById('nwd-hols').value.split('\n').map(s=>s.trim()).filter(s=>/^\d{4}-\d{2}-\d{2}$/.test(s));
+  db.nonWorkingDays={skipWeekends:skipWE,holidays:lines};
+  saveDB();closeModal();
+  if(activeId)selectC(activeId);
+  toast('Jours non travaillés mis à jour !');
+}
+
+// ============================================================
+function showModal(html){document.getElementById('modal-content').innerHTML=html;document.getElementById('modal-overlay').classList.add('open');}
+function closeModal(){document.getElementById('modal-overlay').classList.remove('open');}
+function handleOverlayClick(e){if(e.target===document.getElementById('modal-overlay'))closeModal();}
+
+// INIT
+document.getElementById('top-date').textContent=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+initDB(); // charge depuis Supabase puis affiche
+</script>
+</body>
+</html>
