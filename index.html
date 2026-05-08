@@ -113,8 +113,10 @@ label{ font-size:11px; color:var(--text2); display:block; margin-bottom:4px; }
       <button class="nav-tab" onclick="switchView('st')" id="tab-st">👷 Sous-traitants <span id="st-count-badge" style="font-size:10px;color:var(--text3);margin-left:2px;"></span></button>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:10px;">
+  <div style="display:flex;align-items:center;gap:8px;">
     <span id="sync-indicator" style="font-size:11px;color:var(--text2);">☁ Connexion…</span>
+    <button onclick="exportBackup()" title="Télécharger une sauvegarde" style="font-size:11px;padding:4px 8px;opacity:.7;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='.7'">💾</button>
+    <button onclick="importBackup()" title="Restaurer depuis une sauvegarde" style="font-size:11px;padding:4px 8px;opacity:.7;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='.7'">📂</button>
     <div style="font-size:11px;color:var(--text2);" id="top-date"></div>
     <button onclick="openNonWorkingSettings()" title="Jours non travaillés" style="padding:5px 9px;font-size:13px;">📆</button>
   </div>
@@ -313,7 +315,6 @@ if(!db.nonWorkingDays) db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAY
 const SUPA_URL='https://nlukbtfpxgngpfetfjdg.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5sdWtidGZweGduZ3BmZXRmamRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxOTIwNzYsImV4cCI6MjA5Mzc2ODA3Nn0.5fLOFau_xrFpIdTytEpVvOcZdxhIWsnHlJCxylRUFYY';
 const SUPA_HEADERS={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
-let _syncPending=false, _lastSync=0;
 
 async function loadFromCloud(){
   try{
@@ -336,9 +337,11 @@ async function saveToCloud(data){
 
 function saveDB(){
   try{localStorage.setItem('planning_db_v3',JSON.stringify(db));}catch(e){}
-  // Sync cloud en arrière-plan (anti-rebond 800ms)
   clearTimeout(window._syncTimer);
-  window._syncTimer=setTimeout(()=>saveToCloud(db),800);
+  window._syncTimer=setTimeout(async()=>{
+    await saveToCloud(db);
+    updateSyncIndicator('ok');
+  },800);
   updateSyncIndicator('saving');
 }
 
@@ -349,56 +352,99 @@ function loadDB(){
 function updateSyncIndicator(state){
   const el=document.getElementById('sync-indicator');
   if(!el)return;
-  if(state==='ok')    {el.textContent='☁ Synchronisé';el.style.color='var(--green-text)';}
-  else if(state==='saving'){el.textContent='☁ Sauvegarde…';el.style.color='var(--text2)';}
-  else if(state==='error') {el.textContent='⚠ Hors ligne';el.style.color='var(--warn-text)';}
-  else if(state==='loading'){el.textContent='☁ Chargement…';el.style.color='var(--text2)';}
+  if(state==='ok')     {el.textContent='☁ Synchronisé';     el.style.color='var(--green-text)';}
+  else if(state==='saving') {el.textContent='☁ Sauvegarde…';    el.style.color='var(--text2)';}
+  else if(state==='error')  {el.textContent='⚠ Hors ligne';     el.style.color='var(--warn-text)';}
+  else if(state==='loading'){el.textContent='☁ Chargement…';   el.style.color='var(--text2)';}
 }
 
-// Polling toutes les 30s pour détecter les modifications d'autres appareils
+function hasRealData(d){
+  return d&&d.chantiers&&d.chantiers.length>0;
+}
+
 async function pollCloud(){
   try{
     const cloudData=await loadFromCloud();
     if(!cloudData)return;
+    if(!hasRealData(cloudData))return;
     const cloudStr=JSON.stringify(cloudData);
     const localStr=JSON.stringify(db);
     if(cloudStr!==localStr){
-      // Données plus récentes dans le cloud
       db=cloudData;
-      if(!db.nonWorkingDays) db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
+      if(!db.nonWorkingDays)db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
       try{localStorage.setItem('planning_db_v3',JSON.stringify(db));}catch(e){}
       renderSidebar();
-      if(activeId){
-        const c=db.chantiers.find(x=>x.id===activeId);
-        if(c)selectC(activeId); else{activeId=null;renderSidebar();}
-      }
+      if(activeId){const c=db.chantiers.find(x=>x.id===activeId);if(c)selectC(activeId);}
       renderSTPage();
       updateSyncIndicator('ok');
-      toast('Planning mis à jour depuis le cloud ☁');
+      toast('Planning mis à jour ☁');
     } else {
       updateSyncIndicator('ok');
     }
   }catch(e){updateSyncIndicator('error');}
 }
 
-// Initialisation : charger depuis le cloud en priorité
 async function initDB(){
   updateSyncIndicator('loading');
+  const localData=loadDB(); // données locales existantes
   const cloudData=await loadFromCloud();
-  if(cloudData){
+
+  if(hasRealData(cloudData)){
+    // Le cloud a des données réelles → utiliser le cloud
     db=cloudData;
-    if(!db.nonWorkingDays) db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
+    if(!db.nonWorkingDays)db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
     try{localStorage.setItem('planning_db_v3',JSON.stringify(db));}catch(e){}
     updateSyncIndicator('ok');
+  } else if(hasRealData(localData)){
+    // Cloud vide mais local a des données → garder local et pousser vers cloud
+    db=localData;
+    if(!db.nonWorkingDays)db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
+    await saveToCloud(db);
+    updateSyncIndicator('ok');
+    toast('Données locales synchronisées vers le cloud ☁');
   } else {
-    updateSyncIndicator('error');
+    // Rien nulle part → données par défaut
+    db=defaultDB();
+    if(!db.nonWorkingDays)db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
+    await saveToCloud(db);
+    updateSyncIndicator('ok');
   }
-  // Rendre l'interface
+
   renderSidebar();
   if(db.chantiers.length)selectC(db.chantiers[0].id);
   renderSTPage();
-  // Polling toutes les 30 secondes
-  setInterval(pollCloud, 30000);
+  setInterval(pollCloud,30000);
+}
+
+// ---- EXPORT / IMPORT sauvegarde ----
+function exportBackup(){
+  const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='planning_backup_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+  toast('Sauvegarde téléchargée !');
+}
+
+function importBackup(){
+  const input=document.createElement('input');
+  input.type='file';input.accept='.json';
+  input.onchange=async e=>{
+    const file=e.target.files[0];if(!file)return;
+    const text=await file.text();
+    try{
+      const data=JSON.parse(text);
+      if(!data.chantiers){toast('Fichier invalide.');return;}
+      db=data;
+      if(!db.nonWorkingDays)db.nonWorkingDays={skipWeekends:true,holidays:[...HOLIDAYS_BELGIQUE]};
+      saveDB();
+      renderSidebar();
+      if(db.chantiers.length)selectC(db.chantiers[0].id);
+      renderSTPage();
+      toast('Données restaurées ! ✅');
+    }catch(err){toast('Erreur lors de l\'import.');}
+  };
+  input.click();
 }
 
 
@@ -570,6 +616,7 @@ function renderSTPage(){
       </div>
       <div style="display:flex;gap:5px;margin-top:2px;">
         <button onclick="openEditST(${st.id})" style="flex:1;font-size:11px;padding:4px 8px;">✏ Modifier</button>
+        <button onclick="copySTLink(${st.id})" style="flex:1;font-size:11px;padding:4px 8px;" title="Copier le lien de partage">🔗 Lien</button>
         <button onclick="mailST2(${st.id})" style="flex:1;font-size:11px;padding:4px 8px;">✉ Mail</button>
         <button onclick="deleteST(${st.id})" class="danger-btn" style="font-size:11px;padding:4px 8px;">✕</button>
       </div>
@@ -659,14 +706,119 @@ function deleteST(id){
   toast('Sous-traitant supprimé.');
 }
 
+function copySTLink(id){
+  const st=getST(id);if(!st)return;
+  if(!st.token){st.token=generateToken();saveDB();}
+  const link=getSTLink(st);
+  navigator.clipboard.writeText(link).then(()=>toast('Lien copié ! Envoyez-le à '+st.nom)).catch(()=>{
+    showModal(`<div class="modal-title">🔗 Lien pour ${esc(st.nom)}</div>
+      <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">Copiez ce lien et envoyez-le à votre sous-traitant :</p>
+      <input type="text" value="${link}" readonly style="width:100%;font-size:11px;" onclick="this.select()">
+      <p style="font-size:10px;color:var(--text3);margin-top:6px;">Le sous-traitant verra tout le planning et pourra commenter ses tâches.</p>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onclick="closeModal()">Fermer</button></div>`);
+  });
+}
+
 function mailST2(id){
   const st=getST(id);if(!st||!st.email){toast('Pas d\'email renseigné.');return;}
-  window.location.href=`mailto:${st.email}?subject=Planning%20chantier`;
+  if(!st.token){st.token=generateToken();saveDB();}
+  const link=getSTLink(st);
+  window.location.href=`mailto:${st.email}?subject=${encodeURIComponent('Votre planning - '+st.nom)}&body=${encodeURIComponent('Bonjour,\n\nVoici votre lien pour accéder au planning :\n'+link+'\n\nVous pourrez y consulter toutes les tâches, commenter vos interventions et proposer des dates.\n\nCordialement')}`;
 }
 
 // ============================================================
 // PLANNING
 // ============================================================
+// ============================================================
+// MODE SOUS-TRAITANT
+// ============================================================
+const urlToken=new URLSearchParams(window.location.search).get('token');
+let currentST=null;
+function detectSTMode(){if(!urlToken)return;currentST=db.soustraitants.find(s=>s.token===urlToken)||null;}
+function isST(){return!!currentST;}
+function generateToken(){return Math.random().toString(36).slice(2,10)+Math.random().toString(36).slice(2,10);}
+function ensureTokens(){let ch=false;db.soustraitants.forEach(s=>{if(!s.token){s.token=generateToken();ch=true;}});if(ch)saveDB();}
+function getSTLink(st){return window.location.origin+window.location.pathname+'?token='+st.token;}
+
+function openSTTaskModal(tid){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const t=c?.taches.find(x=>x.id===tid);
+  if(!t||!currentST)return;
+  const isMyST=t.stId===currentST.id;
+  const comments=(t.commentaires||[]);
+  showModal(`<div class="modal-title">${esc(t.nom)}</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">${fmtShort(pDate(t.debut))} → ${fmtShort(pDate(t.fin))} · ${taskDur(t.debut,t.fin)}j · Avancement : ${t.avancement}%</div>
+    ${isMyST?`<div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--bg2);margin-bottom:10px;">
+      <p style="font-size:12px;font-weight:600;margin-bottom:8px;">Mon intervention</p>
+      <div class="form-group"><label>Commentaire</label>
+        <textarea id="st-comment" rows="2" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--bg);color:var(--text);" placeholder="Ajouter une remarque..."></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Proposer début</label><input id="st-prop-debut" type="date" value="${t.debut}"></div>
+        <div class="form-group"><label>Proposer fin</label><input id="st-prop-fin" type="date" value="${t.fin}"></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button onclick="saveSTComment(${tid},'note')" style="flex:1;font-size:11px;padding:5px;">💬 Remarque</button>
+        <button onclick="saveSTComment(${tid},'retard')" class="danger-btn" style="flex:1;font-size:11px;padding:5px;">⚠ Retard</button>
+        <button onclick="saveSTComment(${tid},'proposition')" class="primary" style="flex:1;font-size:11px;padding:5px;">📅 Proposer dates</button>
+      </div>
+    </div>`:''}
+    ${comments.length?`<div>
+      <p style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">Historique</p>
+      ${comments.map(cm=>`<div style="padding:7px 10px;border-radius:var(--radius);margin-bottom:4px;background:${cm.type==='retard'?'var(--danger-bg)':cm.type==='proposition'?'var(--info-bg)':'var(--bg2)'};">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:2px;">${esc(cm.stNom)} · ${cm.date} · ${cm.type==='retard'?'⚠ Retard':cm.type==='proposition'?'📅 Proposition':'💬 Note'}</div>
+        ${cm.texte?`<div style="font-size:12px;">${esc(cm.texte)}</div>`:''}
+        ${cm.type==='proposition'?`<div style="font-size:11px;color:var(--info-text);">${cm.proposedDebut} → ${cm.proposedFin} <span style="color:${cm.statut==='en_attente'?'var(--warn-text)':cm.statut==='accepte'?'var(--green-text)':'var(--danger-text)'};">[${cm.statut==='en_attente'?'En attente':cm.statut==='accepte'?'Accepté':'Refusé'}]</span></div>`:''}
+      </div>`).join('')}
+    </div>`:''}
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onclick="closeModal()">Fermer</button></div>`);
+}
+
+function saveSTComment(tid,type){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const t=c?.taches.find(x=>x.id===tid);
+  if(!t||!currentST)return;
+  if(!t.commentaires)t.commentaires=[];
+  const texte=document.getElementById('st-comment')?.value.trim()||'';
+  const proposedDebut=document.getElementById('st-prop-debut')?.value||t.debut;
+  const proposedFin=document.getElementById('st-prop-fin')?.value||t.fin;
+  t.commentaires.push({id:Date.now(),stId:currentST.id,stNom:currentST.nom,texte,type,
+    proposedDebut:type==='proposition'?proposedDebut:null,proposedFin:type==='proposition'?proposedFin:null,
+    statut:type==='proposition'?'en_attente':null,date:new Date().toLocaleDateString('fr-FR')});
+  saveDB();closeModal();selectC(activeId);
+  toast(type==='proposition'?'Proposition envoyée ✅':type==='retard'?'Retard signalé':'Commentaire ajouté');
+}
+
+function openProposalReview(tid){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const t=c?.taches.find(x=>x.id===tid);
+  if(!t)return;
+  const pending=(t.commentaires||[]).filter(cm=>cm.type==='proposition'&&cm.statut==='en_attente');
+  if(!pending.length){toast('Aucune proposition en attente.');return;}
+  showModal(`<div class="modal-title">📋 Propositions — ${esc(t.nom)}</div>
+    ${pending.map(cm=>`<div style="border:1px solid var(--info-border);border-radius:var(--radius);padding:10px;margin-bottom:8px;background:var(--info-bg);">
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${esc(cm.stNom)} · ${cm.date}</div>
+      ${cm.texte?`<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">"${esc(cm.texte)}"</div>`:''}
+      <div style="font-size:12px;color:var(--info-text);margin-bottom:8px;">📅 ${cm.proposedDebut} → ${cm.proposedFin}</div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="acceptProposal(${tid},${cm.id})" style="flex:1;font-size:12px;padding:6px;background:var(--green-bg);border-color:var(--green-border);color:var(--green-text);">✅ Accepter</button>
+        <button onclick="rejectProposal(${tid},${cm.id})" class="danger-btn" style="flex:1;font-size:12px;padding:6px;">❌ Refuser</button>
+      </div>
+    </div>`).join('')}
+    <div style="display:flex;justify-content:flex-end;margin-top:8px;"><button onclick="closeModal()">Fermer</button></div>`);
+}
+
+function acceptProposal(tid,cmId){
+  const c=db.chantiers.find(x=>x.id===activeId);const t=c?.taches.find(x=>x.id===tid);
+  const cm=(t?.commentaires||[]).find(x=>x.id===cmId);if(!cm)return;
+  cm.statut='accepte';t.debut=cm.proposedDebut;t.fin=cm.proposedFin;
+  saveDB();closeModal();selectC(activeId);toast('Dates mises à jour ✅');
+}
+function rejectProposal(tid,cmId){
+  const c=db.chantiers.find(x=>x.id===activeId);const t=c?.taches.find(x=>x.id===tid);
+  const cm=(t?.commentaires||[]).find(x=>x.id===cmId);if(!cm)return;
+  cm.statut='refuse';saveDB();closeModal();toast('Proposition refusée.');
+}
+
 function renderSidebar(){
   const actifs=db.chantiers.filter(c=>!c.archived);
   const archives=db.chantiers.filter(c=>c.archived);
@@ -1024,17 +1176,19 @@ function _renderGanttCore(c,taches,mn,mx,total,granularity){
           ${isPartial?'<span style="font-size:10px;flex-shrink:0;" title="Continue sur un autre mois">↔</span>':''}
           <div style="font-size:11px;font-weight:600;line-height:1.35;word-break:break-word;color:${delayed?'var(--danger-text)':blocked?'var(--warn-text)':locked?'var(--text2)':'var(--text)'};">${esc(t.nom)}</div>
         </div>
-        <div style="font-size:10px;color:var(--text2);margin-top:1px;">${esc(stName(t.stId))} · ${durJ}j</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:1px;">${esc(stName(t.stId))} · ${durJ}j${t.joursParSemaine&&t.joursParSemaine<5?' · '+t.joursParSemaine+'j/sem':''}</div>
         <div class="prog-track" style="width:90%;margin-top:3px;"><div class="prog-fill" style="width:${done}%;background:${barCol};"></div></div>
       </div>
-      <div class="gantt-track" style="position:relative;cursor:pointer;" onclick="openQuickPopup(event,${t.id})">
+      <div class="gantt-track" style="position:relative;cursor:pointer;" onclick="${isST()?'openSTTaskModal('+t.id+')':'openQuickPopup(event,'+t.id+')'}">
         <!-- Barre fond (durée totale, cliquable) -->
         <div style="position:absolute;left:${visLp}%;width:${visWp}%;height:22px;top:50%;transform:translateY(-50%);background:${col};opacity:${blocked?.1:.18};border-radius:${ts<mn?'0 4px 4px 0':te>mx?'4px 0 0 4px':'4px'};${locked?'border:1.5px dashed #888780;':''}${blocked?'border:1.5px dashed #EF9F27;':''}"></div>
         <!-- Barre avancement -->
         ${done>0?`<div style="position:absolute;left:${visLp}%;width:${Math.max(visWp*done/100,.3)}%;height:22px;top:50%;transform:translateY(-50%);background:${barCol};border-radius:4px;display:flex;align-items:center;padding:0 5px;min-width:4px;">
-          <span style="font-size:9px;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${done>15?t.nom:''}</span>
+          <span style="font-size:9px;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${done>15?esc(t.nom):''}</span>
         </div>`:''}
         ${done<=15?`<div style="position:absolute;left:calc(${visLp}% + ${Math.max(visWp*done/100,.5)}% + 4px);top:50%;transform:translateY(-50%);font-size:9px;color:var(--text2);pointer-events:none;">${done}%</div>`:''}
+        ${/* Badges commentaires/propositions */''}
+        ${!isST()&&(t.commentaires||[]).length?`<div onclick="event.stopPropagation();openProposalReview(${t.id})" style="position:absolute;right:2px;top:2px;background:${(t.commentaires||[]).some(c=>c.type==='proposition'&&c.statut==='en_attente')?'var(--accent)':'var(--text2)'};color:white;border-radius:50%;width:14px;height:14px;font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:7;">${(t.commentaires||[]).filter(c=>c.type==='proposition'&&c.statut==='en_attente').length||'💬'}</div>`:''}
       </div>
     </div>`;
   });
@@ -1260,7 +1414,7 @@ function openAddTask(){
         <div class="form-group" style="margin-bottom:8px;">
           <label>Durée en jours ouvrés *</label>
           <div style="display:flex;gap:8px;align-items:center;">
-            <input id="f-duree" type="number" min="1" max="500" step="0.5" placeholder="ex: 32" style="width:90px;" oninput="updateDureeLabel()">
+            <input id="f-duree" type="number" min="1" max="500" step="0.5" placeholder="ex: 5" style="width:90px;" oninput="updateDureeLabel()">
             <span id="duree-label" style="font-size:11px;color:var(--text2);font-style:italic;"></span>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
@@ -1270,20 +1424,25 @@ function openAddTask(){
           </div>
         </div>
         <div class="form-group" style="margin-bottom:0;">
-          <label>Se termine avant *</label>
-          <div style="display:flex;gap:6px;margin-bottom:6px;">
-            <button id="ctr-tache-btn" onclick="setContrainteMode('tache')" style="flex:1;font-size:11px;padding:5px;background:var(--accent);color:white;border-color:var(--accent);">Avant une tâche</button>
+          <label>Contrainte *</label>
+          <div style="display:flex;gap:5px;margin-bottom:6px;">
+            <button id="ctr-debut-btn" onclick="setContrainteMode('debut')"  style="flex:1;font-size:11px;padding:5px;background:var(--accent);color:white;border-color:var(--accent);">📅 À partir du</button>
+            <button id="ctr-tache-btn" onclick="setContrainteMode('tache')" style="flex:1;font-size:11px;padding:5px;background:var(--bg);color:var(--text2);">Avant une tâche</button>
             <button id="ctr-date-btn"  onclick="setContrainteMode('date')"  style="flex:1;font-size:11px;padding:5px;background:var(--bg);color:var(--text2);">Avant une date</button>
           </div>
-          <div id="ctr-tache-div">
-            <select id="f-fin-before-task">
+          <div id="ctr-debut-div">
+            <input id="f-debut-duree" type="date" onchange="updateDureePreview()">
+            <div style="font-size:10px;color:var(--text3);margin-top:3px;">La tâche commence à cette date et dure le nombre de jours ouvrés indiqué.</div>
+          </div>
+          <div id="ctr-tache-div" style="display:none;">
+            <select id="f-fin-before-task" onchange="updateDureePreview()">
               <option value="">— Choisir une tâche —</option>
               ${finBeforeOpts}
             </select>
             <div style="font-size:10px;color:var(--text3);margin-top:3px;">La tâche se terminera juste avant le début de la tâche choisie.</div>
           </div>
           <div id="ctr-date-div" style="display:none;">
-            <input id="f-fin-before-date" type="date">
+            <input id="f-fin-before-date" type="date" onchange="updateDureePreview()">
             <div style="font-size:10px;color:var(--text3);margin-top:3px;">La tâche se terminera au plus tard à cette date.</div>
           </div>
         </div>
@@ -1293,6 +1452,17 @@ function openAddTask(){
 
     <div class="form-group"><label>Avancement : <span id="aval">0%</span></label>
       <input type="range" min="0" max="100" step="5" value="0" id="f-av" oninput="document.getElementById('aval').textContent=this.value+'%'"></div>
+    <div class="form-group" style="border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;background:var(--bg2);">
+      <label style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px;">Jours d'intervention / semaine</label>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input id="f-jps" type="number" min="1" max="5" step="1" value="5" style="width:60px;">
+        <span style="font-size:11px;color:var(--text2);">jour(s) sur 5 par semaine</span>
+        <span id="jps-hint" style="font-size:10px;color:var(--text3);font-style:italic;"></span>
+      </div>
+      <div style="display:flex;gap:5px;margin-top:5px;">
+        ${[1,2,3,4,5].map(n=>`<button type="button" onclick="document.getElementById('f-jps').value=${n};updateJpsHint()" style="flex:1;font-size:11px;padding:3px;">${n}j</button>`).join('')}
+      </div>
+    </div>
     <div class="form-group" style="border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px;background:var(--bg2);">
       <label style="font-weight:600;color:var(--text);margin-bottom:8px;">🔗 Dépendance</label>
       <select id="f-dep" style="margin-bottom:6px;" onchange="onDepChange()">${depOptions(null)}</select>
@@ -1329,12 +1499,20 @@ function setTaskMode(mode){
 
 function setContrainteMode(mode){
   window._contrainteMode=mode;
-  document.getElementById('ctr-tache-div').style.display=mode==='tache'?'block':'none';
-  document.getElementById('ctr-date-div').style.display=mode==='date'?'block':'none';
-  document.getElementById('ctr-tache-btn').style.cssText='flex:1;font-size:11px;padding:5px;'+(mode==='tache'?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--bg);color:var(--text2);');
-  document.getElementById('ctr-date-btn').style.cssText='flex:1;font-size:11px;padding:5px;'+(mode==='date'?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--bg);color:var(--text2);');
+  ['debut','tache','date'].forEach(m=>{
+    const btn=document.getElementById('ctr-'+m+'-btn');
+    const div=document.getElementById('ctr-'+m+'-div');
+    if(btn) btn.style.cssText='flex:1;font-size:11px;padding:5px;'+(mode===m?'background:var(--accent);color:white;border-color:var(--accent);font-weight:600;':'background:var(--bg);color:var(--text2);');
+    if(div) div.style.display=mode===m?'block':'none';
+  });
   updateDureePreview();
 }
+
+function updateJpsHint(){
+  const n=parseInt(document.getElementById('f-jps')?.value)||5;
+  const hint=document.getElementById('jps-hint');
+  if(hint) hint.textContent=n<5?`(${n}j sur 5 chaque semaine)`:'';}
+
 
 function setDuree(v){
   document.getElementById('f-duree').value=v;
@@ -1353,22 +1531,30 @@ function updateDureePreview(){
   if(!prev)return;
   const n=Math.round(parseFloat(document.getElementById('f-duree')?.value)||0);
   if(!n){prev.style.display='none';return;}
-  let endDate=null;
-  if(window._contrainteMode==='tache'){
+  let startDate=null, endDate=null;
+  const mode=window._contrainteMode||'debut';
+  if(mode==='debut'){
+    const dv=document.getElementById('f-debut-duree')?.value;
+    if(!dv){prev.style.display='none';return;}
+    startDate=pDate(dv);
+    endDate=addWorkingDays(startDate,n);
+  } else if(mode==='tache'){
     const tid=parseInt(document.getElementById('f-fin-before-task')?.value)||null;
-    if(tid){
-      const c=db.chantiers.find(x=>x.id===activeId);
-      const tref=c?.taches.find(x=>x.id===tid);
-      if(tref) endDate=addD(pDate(tref.debut),-1);
-    }
+    if(!tid){prev.style.display='none';return;}
+    const c=db.chantiers.find(x=>x.id===activeId);
+    const tref=c?.taches.find(x=>x.id===tid);
+    if(!tref){prev.style.display='none';return;}
+    endDate=addD(pDate(tref.debut),-1);
+    startDate=subtractWorkingDays(endDate,n);
   } else {
     const dv=document.getElementById('f-fin-before-date')?.value;
-    if(dv) endDate=pDate(dv);
+    if(!dv){prev.style.display='none';return;}
+    endDate=pDate(dv);
+    startDate=subtractWorkingDays(endDate,n);
   }
-  if(!endDate){prev.style.display='none';return;}
-  const startDate=subtractWorkingDays(endDate,n);
+  if(!startDate||!endDate){prev.style.display='none';return;}
   prev.style.display='block';
-  prev.innerHTML=`📅 Début calculé : <strong>${fmtD(startDate)}</strong> → Fin : <strong>${fmtD(endDate)}</strong> (${n} jours ouvrés)`;
+  prev.innerHTML=`📅 Début : <strong>${fmtD(startDate)}</strong> → Fin : <strong>${fmtD(endDate)}</strong> (${n} jours ouvrés)`;
 }
 
 function saveTask(){
@@ -1378,6 +1564,7 @@ function saveTask(){
   const locked=document.getElementById('f-locked')?.checked||false;
   const dependsOn=parseInt(document.getElementById('f-dep')?.value)||null;
   const depType=document.getElementById('f-dep-type')?.value||'FS';
+  const joursParSemaine=parseInt(document.getElementById('f-jps')?.value)||5;
   if(!nom){toast('Le nom est requis.');return;}
 
   let debut, fin;
@@ -1389,30 +1576,39 @@ function saveTask(){
     if(!debut||!fin){toast('Les dates sont requises.');return;}
     if(debut>fin){toast('La date de début doit être avant la fin.');return;}
   } else {
-    // Mode durée
     const nDays=Math.round(parseFloat(document.getElementById('f-duree')?.value)||0);
     if(!nDays||nDays<1){toast('Indiquez une durée en jours ouvrés.');return;}
-    let endDate=null;
-    if(window._contrainteMode==='tache'){
+    const contrainte=window._contrainteMode||'debut';
+    if(contrainte==='debut'){
+      const dv=document.getElementById('f-debut-duree')?.value;
+      if(!dv){toast('Indiquez une date de début.');return;}
+      const startDate=pDate(dv);
+      const endDate=addWorkingDays(startDate,nDays);
+      debut=dv;
+      fin=endDate.toISOString().slice(0,10);
+    } else if(contrainte==='tache'){
       const tid=parseInt(document.getElementById('f-fin-before-task')?.value)||null;
       if(!tid){toast('Choisissez une tâche de référence.');return;}
       const c2=db.chantiers.find(x=>x.id===activeId);
       const tref=c2?.taches.find(x=>x.id===tid);
       if(!tref){toast('Tâche introuvable.');return;}
-      endDate=addD(pDate(tref.debut),-1);
+      const endDate=addD(pDate(tref.debut),-1);
+      const startDate=subtractWorkingDays(endDate,nDays);
+      debut=startDate.toISOString().slice(0,10);
+      fin=endDate.toISOString().slice(0,10);
     } else {
       const dv=document.getElementById('f-fin-before-date')?.value;
       if(!dv){toast('Choisissez une date limite.');return;}
-      endDate=pDate(dv);
+      const endDate=pDate(dv);
+      const startDate=subtractWorkingDays(endDate,nDays);
+      debut=startDate.toISOString().slice(0,10);
+      fin=endDate.toISOString().slice(0,10);
     }
-    const startDate=subtractWorkingDays(endDate,nDays);
-    debut=startDate.toISOString().slice(0,10);
-    fin=endDate.toISOString().slice(0,10);
     if(debut>fin){toast('Durée trop longue par rapport à la contrainte.');return;}
   }
 
   const c=db.chantiers.find(x=>x.id===activeId);
-  c.taches.push({id:nextTaskId(c),nom,stId,debut,fin,avancement,locked,dependsOn,depType});
+  c.taches.push({id:nextTaskId(c),nom,stId,debut,fin,avancement,locked,dependsOn,depType,joursParSemaine,commentaires:[]});
   saveDB();closeModal();selectC(activeId);toast('Tâche ajoutée !');
 }
 
@@ -1441,6 +1637,16 @@ function openEdit(tid){
     <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">Durée : <strong>${durJ} jours</strong></div>
     <div class="form-group"><label>Avancement : <span id="aval">${t.avancement}%</span></label>
       <input type="range" min="0" max="100" step="5" value="${t.avancement}" id="f-av" oninput="document.getElementById('aval').textContent=this.value+'%'"></div>
+    <div class="form-group" style="border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;background:var(--bg2);">
+      <label style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px;">Jours d'intervention / semaine</label>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input id="f-jps" type="number" min="1" max="5" step="1" value="${t.joursParSemaine||5}" style="width:60px;" oninput="updateJpsHint()">
+        <span style="font-size:11px;color:var(--text2);">jour(s) sur 5 par semaine</span>
+      </div>
+      <div style="display:flex;gap:5px;margin-top:5px;">
+        ${[1,2,3,4,5].map(n=>`<button type="button" onclick="document.getElementById('f-jps').value=${n};updateJpsHint()" style="flex:1;font-size:11px;padding:3px;${(t.joursParSemaine||5)===n?'background:var(--accent);color:white;border-color:var(--accent);':''}">${n}j</button>`).join('')}
+      </div>
+    </div>
     <div class="form-group" style="border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px;background:var(--bg2);">
       <label style="font-weight:600;color:var(--text);margin-bottom:8px;">🔗 Dépendance</label>
       <select id="f-dep" style="margin-bottom:6px;" onchange="onDepChange()"><option value="">— Aucune dépendance —</option>${depOpts}</select>
@@ -1476,9 +1682,10 @@ function updTask(tid){
   const locked=document.getElementById('f-locked')?.checked||false;
   const dependsOn=parseInt(document.getElementById('f-dep')?.value)||null;
   const depType=document.getElementById('f-dep-type')?.value||'FS';
+  const joursParSemaine=parseInt(document.getElementById('f-jps')?.value)||5;
   if(!nom||!debut||!fin){toast('Champs requis.');return;}
   const c=db.chantiers.find(x=>x.id===activeId),t=c.taches.find(x=>x.id===tid);
-  Object.assign(t,{nom,stId,debut,fin,avancement,locked,dependsOn,depType});
+  Object.assign(t,{nom,stId,debut,fin,avancement,locked,dependsOn,depType,joursParSemaine});
   saveDB();closeModal();selectC(activeId);toast('Tâche mise à jour !');
 }
 
@@ -1711,6 +1918,16 @@ function openExport(){
 }
 
 function generatePDF(c, filterStId, filename, monthFilter){
+  // Vérifier que jsPDF est bien chargé
+  if(!window.jspdf||!window.jspdf.jsPDF){
+    toast('Librairie PDF non chargée — réessayez dans quelques secondes.');
+    // Tenter de recharger jsPDF
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload=()=>toast('PDF prêt, réessayez l\'export !');
+    document.head.appendChild(s);
+    return;
+  }
   const {jsPDF}=window.jspdf;
   let tasks=(filterStId!==undefined?c.taches.filter(t=>t.stId===filterStId):[...c.taches])
     .sort((a,b)=>a.debut.localeCompare(b.debut));
@@ -1913,6 +2130,7 @@ function generatePDF(c, filterStId, filename, monthFilter){
 
 function exportPDF(mode){
   const c=db.chantiers.find(x=>x.id===activeId);
+  if(!c){toast('Aucun chantier sélectionné.');return;}
   const tmp=mode==='delayed'?{...c,taches:c.taches.filter(t=>isDelayed(t))}:c;
   if(!tmp.taches.length){toast('Aucune tâche à exporter.');return;}
   generatePDF(tmp,undefined,c.nom.replace(/\s+/g,'_')+(mode==='delayed'?'_retards':'_complet'),null);
@@ -2171,7 +2389,26 @@ function handleOverlayClick(e){if(e.target===document.getElementById('modal-over
 
 // INIT
 document.getElementById('top-date').textContent=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-initDB(); // charge depuis Supabase puis affiche
+
+async function start(){
+  await initDB();
+  ensureTokens();
+  detectSTMode();
+  if(isST()){
+    // Mode sous-traitant : adapter l'interface
+    document.getElementById('top-date').textContent='👷 '+currentST.nom;
+    const stBanner=document.createElement('div');
+    stBanner.style.cssText='background:var(--info-bg);border-bottom:1px solid var(--info-border);padding:6px 16px;font-size:12px;color:var(--info-text);text-align:center;';
+    stBanner.innerHTML=`Vous consultez ce planning en tant que <strong>${esc(currentST.nom)}</strong> — cliquez sur une tâche pour commenter ou proposer des dates`;
+    document.querySelector('.topbar').insertAdjacentElement('afterend',stBanner);
+    // Cacher les boutons entrepreneur
+    ['btn-add','btn-export','btn-share','btn-settings','btn-alerts'].forEach(id=>{
+      const el=document.getElementById(id);if(el)el.style.display='none';
+    });
+    document.querySelector('.sidebar-header')?.style && (document.querySelector('.sidebar-header').style.display='none');
+  }
+}
+start();
 </script>
 </body>
 </html>
