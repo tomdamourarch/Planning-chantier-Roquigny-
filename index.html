@@ -413,7 +413,8 @@ async function initDB(){
   renderSidebar();
   if(db.chantiers.length)selectC(db.chantiers[0].id);
   renderSTPage();
-  setInterval(pollCloud,30000);
+  if(!isST()) renderAlertBanner();
+  setInterval(()=>{pollCloud();if(!isST())renderAlertBanner();},30000);
 }
 
 // ---- EXPORT / IMPORT sauvegarde ----
@@ -719,6 +720,22 @@ function copySTLink(id){
   });
 }
 
+function copyClientLink(){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  if(!c)return;
+  if(!c.clientToken){c.clientToken=generateToken();saveDB();}
+  const link=getClientLink(c);
+  showModal(`<div class="modal-title">👤 Lien client — ${esc(c.nom)}</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">Lien de consultation pour <strong>${esc(c.client)}</strong> :</p>
+    <input type="text" value="${link}" readonly style="width:100%;font-size:11px;" onclick="this.select()">
+    <p style="font-size:10px;color:var(--text3);margin-top:6px;">Le client pourra <strong>consulter le planning et laisser des commentaires</strong> mais ne pourra rien modifier. Il ne verra que ce chantier.</p>
+    <div style="display:flex;gap:7px;margin-top:10px;">
+      <button onclick="navigator.clipboard.writeText('${link}').then(()=>toast('Lien copié !'))" class="primary" style="flex:1;">📋 Copier le lien</button>
+      <button onclick="window.location.href='mailto:?subject=${encodeURIComponent('Suivi de chantier - '+c.nom)}&body=${encodeURIComponent('Bonjour,\n\nVoici le lien pour consulter le suivi de votre chantier :\n'+link+'\n\nCordialement')}'" style="flex:1;">✉ Envoyer par email</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onclick="closeModal()">Fermer</button></div>`);
+}
+
 function mailST2(id){
   const st=getST(id);if(!st||!st.email){toast('Pas d\'email renseigné.');return;}
   if(!st.token){st.token=generateToken();saveDB();}
@@ -733,12 +750,27 @@ function mailST2(id){
 // MODE SOUS-TRAITANT
 // ============================================================
 const urlToken=new URLSearchParams(window.location.search).get('token');
+const urlClient=new URLSearchParams(window.location.search).get('client');
 let currentST=null;
+let currentClient=null; // {chantierId, chantierNom}
 function detectSTMode(){if(!urlToken)return;currentST=db.soustraitants.find(s=>s.token===urlToken)||null;}
+function detectClientMode(){
+  if(!urlClient)return;
+  const c=db.chantiers.find(x=>x.clientToken===urlClient);
+  if(c)currentClient={chantierId:c.id,chantierNom:c.nom,clientName:c.client};
+}
 function isST(){return!!currentST;}
+function isClient(){return!!currentClient;}
+function isViewer(){return isST()||isClient();}
 function generateToken(){return Math.random().toString(36).slice(2,10)+Math.random().toString(36).slice(2,10);}
-function ensureTokens(){let ch=false;db.soustraitants.forEach(s=>{if(!s.token){s.token=generateToken();ch=true;}});if(ch)saveDB();}
+function ensureTokens(){
+  let ch=false;
+  db.soustraitants.forEach(s=>{if(!s.token){s.token=generateToken();ch=true;}});
+  db.chantiers.forEach(c=>{if(!c.clientToken){c.clientToken=generateToken();ch=true;}});
+  if(ch)saveDB();
+}
 function getSTLink(st){return window.location.origin+window.location.pathname+'?token='+st.token;}
+function getClientLink(c){return window.location.origin+window.location.pathname+'?client='+c.clientToken;}
 
 function openSTTaskModal(tid){
   const c=db.chantiers.find(x=>x.id===activeId);
@@ -768,6 +800,7 @@ function openSTTaskModal(tid){
         <div style="font-size:10px;color:var(--text2);margin-bottom:2px;">${esc(cm.stNom)} · ${cm.date} · ${cm.type==='retard'?'⚠ Retard':cm.type==='proposition'?'📅 Proposition':'💬 Note'}</div>
         ${cm.texte?`<div style="font-size:12px;">${esc(cm.texte)}</div>`:''}
         ${cm.type==='proposition'?`<div style="font-size:11px;color:var(--info-text);">${cm.proposedDebut} → ${cm.proposedFin} <span style="color:${cm.statut==='en_attente'?'var(--warn-text)':cm.statut==='accepte'?'var(--green-text)':'var(--danger-text)'};">[${cm.statut==='en_attente'?'En attente':cm.statut==='accepte'?'Accepté':'Refusé'}]</span></div>`:''}
+        ${cm.reply?`<div style="background:var(--bg);border-radius:var(--radius);padding:5px 8px;margin-top:5px;font-size:11px;border-left:3px solid var(--accent);"><span style="color:var(--text2);font-size:10px;">Réponse :</span> ${esc(cm.reply)}</div>`:''}
       </div>`).join('')}
     </div>`:''}
     <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onclick="closeModal()">Fermer</button></div>`);
@@ -792,19 +825,48 @@ function openProposalReview(tid){
   const c=db.chantiers.find(x=>x.id===activeId);
   const t=c?.taches.find(x=>x.id===tid);
   if(!t)return;
-  const pending=(t.commentaires||[]).filter(cm=>cm.type==='proposition'&&cm.statut==='en_attente');
-  if(!pending.length){toast('Aucune proposition en attente.');return;}
-  showModal(`<div class="modal-title">📋 Propositions — ${esc(t.nom)}</div>
-    ${pending.map(cm=>`<div style="border:1px solid var(--info-border);border-radius:var(--radius);padding:10px;margin-bottom:8px;background:var(--info-bg);">
-      <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${esc(cm.stNom)} · ${cm.date}</div>
-      ${cm.texte?`<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">"${esc(cm.texte)}"</div>`:''}
-      <div style="font-size:12px;color:var(--info-text);margin-bottom:8px;">📅 ${cm.proposedDebut} → ${cm.proposedFin}</div>
-      <div style="display:flex;gap:6px;">
-        <button onclick="acceptProposal(${tid},${cm.id})" style="flex:1;font-size:12px;padding:6px;background:var(--green-bg);border-color:var(--green-border);color:var(--green-text);">✅ Accepter</button>
-        <button onclick="rejectProposal(${tid},${cm.id})" class="danger-btn" style="flex:1;font-size:12px;padding:6px;">❌ Refuser</button>
-      </div>
-    </div>`).join('')}
-    <div style="display:flex;justify-content:flex-end;margin-top:8px;"><button onclick="closeModal()">Fermer</button></div>`);
+  const comments=(t.commentaires||[]);
+  if(!comments.length){toast('Aucun message sur cette tâche.');return;}
+  showModal(`<div class="modal-title">💬 Messages — ${esc(t.nom)}</div>
+    <div style="max-height:300px;overflow-y:auto;margin-bottom:12px;">
+    ${comments.map((cm,idx)=>`
+      <div style="border:1px solid ${cm.type==='retard'?'var(--danger-border)':cm.type==='proposition'?'var(--info-border)':'var(--border)'};border-radius:var(--radius);padding:10px;margin-bottom:8px;background:${cm.type==='retard'?'var(--danger-bg)':cm.type==='proposition'?'var(--info-bg)':'var(--bg2)'};">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <div style="font-size:11px;font-weight:600;color:var(--text);">${esc(cm.stNom)} · ${cm.date}</div>
+          <span style="font-size:10px;color:${cm.type==='retard'?'var(--danger-text)':cm.type==='proposition'?'var(--info-text)':'var(--text2)'};">${cm.type==='retard'?'⚠ Retard':cm.type==='proposition'?'📅 Proposition':'💬 Note'}</span>
+        </div>
+        ${cm.texte?`<div style="font-size:12px;color:var(--text);margin-bottom:6px;">"${esc(cm.texte)}"</div>`:''}
+        ${cm.type==='proposition'?`<div style="font-size:11px;color:var(--info-text);margin-bottom:6px;">📅 ${cm.proposedDebut} → ${cm.proposedFin}
+          <span style="margin-left:6px;font-weight:600;color:${cm.statut==='en_attente'?'var(--warn-text)':cm.statut==='accepte'?'var(--green-text)':'var(--danger-text)'};">[${cm.statut==='en_attente'?'En attente':cm.statut==='accepte'?'Accepté':'Refusé'}]</span>
+        </div>
+        ${cm.statut==='en_attente'?`<div style="display:flex;gap:6px;margin-bottom:6px;">
+          <button onclick="acceptProposal(${tid},${cm.id})" style="flex:1;font-size:11px;padding:5px;background:var(--green-bg);border-color:var(--green-border);color:var(--green-text);">✅ Accepter</button>
+          <button onclick="rejectProposal(${tid},${cm.id})" class="danger-btn" style="flex:1;font-size:11px;padding:5px;">❌ Refuser</button>
+        </div>`:''}
+        `:''}
+        <!-- Réponse entrepreneur -->
+        ${cm.reply?`<div style="background:var(--bg);border-radius:var(--radius);padding:6px 8px;margin-top:4px;font-size:11px;border-left:3px solid var(--accent);">
+          <span style="color:var(--text2);font-size:10px;">Votre réponse :</span> ${esc(cm.reply)}
+        </div>`:`<div style="display:flex;gap:5px;margin-top:6px;">
+          <input id="reply-${idx}" type="text" placeholder="Répondre à ${esc(cm.stNom)}…" style="flex:1;font-size:11px;padding:5px;">
+          <button onclick="replyToComment(${tid},${cm.id},'reply-${idx}')" style="font-size:11px;padding:5px 10px;background:var(--accent);color:white;border-color:var(--accent);">↩ Répondre</button>
+        </div>`}
+      </div>`).join('')}
+    </div>
+    <div style="display:flex;justify-content:flex-end;"><button onclick="closeModal()">Fermer</button></div>`);
+}
+
+function replyToComment(tid,cmId,inputId){
+  const reply=document.getElementById(inputId)?.value.trim();
+  if(!reply){toast('Tapez votre réponse.');return;}
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const t=c?.taches.find(x=>x.id===tid);
+  const cm=(t?.commentaires||[]).find(x=>x.id===cmId);
+  if(!cm)return;
+  cm.reply=reply;cm.replied=true;
+  saveDB();closeModal();renderAlertBanner();
+  if(document.getElementById('view-overview').classList.contains('active'))renderOverview();
+  toast('Réponse envoyée ✅');
 }
 
 function acceptProposal(tid,cmId){
@@ -817,6 +879,46 @@ function rejectProposal(tid,cmId){
   const c=db.chantiers.find(x=>x.id===activeId);const t=c?.taches.find(x=>x.id===tid);
   const cm=(t?.commentaires||[]).find(x=>x.id===cmId);if(!cm)return;
   cm.statut='refuse';saveDB();closeModal();toast('Proposition refusée.');
+}
+
+// Modal client : voir + commenter (lecture seule)
+function openClientTaskModal(tid){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const t=c?.taches.find(x=>x.id===tid);
+  if(!t||!currentClient)return;
+  const comments=(t.commentaires||[]);
+  showModal(`<div class="modal-title">${esc(t.nom)}</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${fmtShort(pDate(t.debut))} → ${fmtShort(pDate(t.fin))} · ${taskDur(t.debut,t.fin)}j · Avancement : ${t.avancement}%</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">Sous-traitant : <strong style="color:${stColor(t.stId)};">${esc(stName(t.stId))}</strong></div>
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--bg2);margin-bottom:10px;">
+      <p style="font-size:12px;font-weight:600;margin-bottom:6px;">💬 Laisser un commentaire</p>
+      <textarea id="client-comment" rows="2" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--bg);color:var(--text);" placeholder="Question, remarque..."></textarea>
+      <button onclick="saveClientComment(${tid})" class="primary" style="width:100%;margin-top:6px;padding:6px;font-size:12px;">Envoyer</button>
+    </div>
+    ${comments.length?`<div>
+      <p style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">Historique</p>
+      ${comments.map(cm=>`<div style="padding:7px 10px;border-radius:var(--radius);margin-bottom:4px;background:${cm.type==='retard'?'var(--danger-bg)':cm.type==='proposition'?'var(--info-bg)':cm.type==='client'?'#FFF7E6':'var(--bg2)'};">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:2px;">${esc(cm.stNom)} · ${cm.date} · ${cm.type==='retard'?'⚠ Retard':cm.type==='proposition'?'📅 Proposition':cm.type==='client'?'👤 Client':'💬 Note'}</div>
+        ${cm.texte?`<div style="font-size:12px;">${esc(cm.texte)}</div>`:''}
+        ${cm.reply?`<div style="background:var(--bg);border-radius:var(--radius);padding:5px 8px;margin-top:5px;font-size:11px;border-left:3px solid var(--accent);"><span style="color:var(--text2);font-size:10px;">Réponse :</span> ${esc(cm.reply)}</div>`:''}
+      </div>`).join('')}
+    </div>`:''}
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onclick="closeModal()">Fermer</button></div>`);
+}
+
+function saveClientComment(tid){
+  const c=db.chantiers.find(x=>x.id===activeId);
+  const t=c?.taches.find(x=>x.id===tid);
+  if(!t||!currentClient)return;
+  const texte=document.getElementById('client-comment')?.value.trim();
+  if(!texte){toast('Tapez votre commentaire.');return;}
+  if(!t.commentaires)t.commentaires=[];
+  t.commentaires.push({
+    id:Date.now(),stId:null,stNom:'Client · '+(currentClient.clientName||'Maître d\'ouvrage'),
+    texte,type:'client',date:new Date().toLocaleDateString('fr-FR')
+  });
+  saveDB();closeModal();selectC(activeId);
+  toast('Commentaire envoyé ✅');
 }
 
 function renderSidebar(){
@@ -1168,7 +1270,7 @@ function _renderGanttCore(c,taches,mn,mx,total,granularity){
     const isPartial=granularity==='days'&&(ts<mn||te>mx); // dépasse le mois affiché
 
     bH+=`<div class="gantt-row">
-      <div class="gantt-label" style="width:${LW}px;cursor:pointer;" onclick="openEdit(${t.id})" title="Cliquer pour modifier">
+      <div class="gantt-label" style="width:${LW}px;cursor:pointer;${isST()&&t.stId===currentST?.id?'border-left:3px solid '+stColor(t.stId)+';padding-left:5px;':''}" onclick="openEdit(${t.id})" title="Cliquer pour modifier">
         <div style="display:flex;align-items:flex-start;gap:3px;">
           ${delayed?'<span style="color:var(--danger);font-size:11px;flex-shrink:0;">⚠</span>':''}
           ${blocked?`<span style="color:var(--warn-text);font-size:11px;flex-shrink:0;" title="En attente">🔗</span>`:''}
@@ -1179,7 +1281,7 @@ function _renderGanttCore(c,taches,mn,mx,total,granularity){
         <div style="font-size:10px;color:var(--text2);margin-top:1px;">${esc(stName(t.stId))} · ${durJ}j${t.joursParSemaine&&t.joursParSemaine<5?' · '+t.joursParSemaine+'j/sem':''}</div>
         <div class="prog-track" style="width:90%;margin-top:3px;"><div class="prog-fill" style="width:${done}%;background:${barCol};"></div></div>
       </div>
-      <div class="gantt-track" style="position:relative;cursor:pointer;" onclick="${isST()?'openSTTaskModal('+t.id+')':'openQuickPopup(event,'+t.id+')'}">
+      <div class="gantt-track" style="position:relative;cursor:pointer;" onclick="${isClient()?'openClientTaskModal('+t.id+')':isST()?'openSTTaskModal('+t.id+')':'openQuickPopup(event,'+t.id+')'}">
         <!-- Barre fond (durée totale, cliquable) -->
         <div style="position:absolute;left:${visLp}%;width:${visWp}%;height:22px;top:50%;transform:translateY(-50%);background:${col};opacity:${blocked?.1:.18};border-radius:${ts<mn?'0 4px 4px 0':te>mx?'4px 0 0 4px':'4px'};${locked?'border:1.5px dashed #888780;':''}${blocked?'border:1.5px dashed #EF9F27;':''}"></div>
         <!-- Barre avancement -->
@@ -1728,6 +1830,10 @@ function openChantierSettings(){
         ✏️ &nbsp;Renommer le chantier
       </button>
 
+      <button onclick="copyClientLink()" style="text-align:left;padding:10px 12px;font-size:13px;background:var(--info-bg);border-color:var(--info-border);color:var(--info-text);">
+        👤 &nbsp;Lien client (lecture + commentaires) <span style="font-size:11px;font-weight:400;">— pour partager au maître d'ouvrage</span>
+      </button>
+
       <button onclick="openAccessConstraints()" style="text-align:left;padding:10px 12px;font-size:13px;background:${nc?'var(--warn-bg)':'var(--bg)'};border-color:${nc?'var(--warn-text)':'var(--border2)'};color:${nc?'var(--warn-text)':'var(--text)'};">
         🚫 &nbsp;Contraintes d'accès <span style="font-size:11px;font-weight:400;">${nc?nc+' période(s) configurée(s)':'(inaccessible, accès partiel…)'}</span>
       </button>
@@ -2183,16 +2289,183 @@ function shareST(stId){
 // ============================================================
 // VUE D'ENSEMBLE
 // ============================================================
+// ============================================================
+// CHARGE JOURNALIÈRE PAR MÉTIER
+// ============================================================
+// Pour un jour donné, retourne {métier: [stIds actifs ce jour]}
+function workloadOnDay(c, date){
+  const d=date.getTime();
+  const result={};
+  c.taches.forEach(t=>{
+    const ts=pDate(t.debut).getTime(), te=pDate(t.fin).getTime();
+    if(d<ts||d>te)return;
+    const st=db.soustraitants.find(s=>s.id===t.stId);
+    if(!st)return;
+    const metier=(st.metier||'Sans métier').trim()||'Sans métier';
+    if(!result[metier])result[metier]=new Set();
+    result[metier].add(st.id);
+  });
+  // Convertir Set en Array de tailles
+  const out={};
+  Object.entries(result).forEach(([m,set])=>{out[m]=Array.from(set);});
+  return out;
+}
+
+// Mini-heatmap pour les cartes chantier : 14 jours à partir d'aujourd'hui
+function renderWorkloadMini(c){
+  if(!c.taches.length||c.archived)return '';
+  const today=new Date();today.setHours(0,0,0,0);
+  const days=[];
+  for(let i=0;i<14;i++)days.push(addD(today,i));
+  // Calculer la charge max sur les 14 jours pour normaliser
+  let hasAny=false, maxOverlap=0;
+  const dayData=days.map(d=>{
+    const w=workloadOnDay(c,d);
+    const total=Object.values(w).reduce((s,arr)=>s+arr.length,0);
+    const trades=Object.entries(w);
+    const maxSameTrade=Math.max(0,...Object.values(w).map(arr=>arr.length));
+    if(total>0)hasAny=true;
+    maxOverlap=Math.max(maxOverlap,maxSameTrade);
+    return{date:d,total,maxSameTrade,trades};
+  });
+  if(!hasAny)return '';
+
+  return `<div style="margin-bottom:10px;padding:8px 10px;background:var(--bg2);border-radius:var(--radius);cursor:pointer;" onclick="event.stopPropagation();openWorkloadDetail(${c.id})" title="Cliquez pour voir le détail">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+      <span style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Charge 14 jours</span>
+      ${maxOverlap>=3?`<span style="font-size:10px;color:var(--danger-text);font-weight:600;">⚠ Surcharge</span>`:''}
+    </div>
+    <div style="display:flex;gap:1px;height:18px;">
+      ${dayData.map(({date,total,maxSameTrade,trades})=>{
+        const we=date.getDay()===0||date.getDay()===6;
+        let color='var(--bg)';
+        if(we) color='var(--bg3)';
+        else if(maxSameTrade>=3) color='var(--danger)';
+        else if(maxSameTrade===2) color='var(--warn-text)';
+        else if(total>0) color='var(--accent)';
+        const tradesStr=trades.map(([m,arr])=>`${m}: ${arr.length}`).join(', ');
+        const title=`${fmtShort(date)} — ${total?tradesStr:'Vide'}`;
+        return `<div style="flex:1;background:${color};border-radius:2px;${total>0?'opacity:'+Math.min(0.3+total*0.2,1):'opacity:0.3'};" title="${title}"></div>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px;">
+      <span>${fmtShort(dayData[0].date)}</span>
+      <span>${fmtShort(dayData[13].date)}</span>
+    </div>
+  </div>`;
+}
+
+// Détail charge pour un chantier (sur 4 semaines)
+function openWorkloadDetail(cid){
+  const c=db.chantiers.find(x=>x.id===cid);
+  if(!c)return;
+  const today=new Date();today.setHours(0,0,0,0);
+  const days=[];
+  for(let i=-7;i<35;i++)days.push(addD(today,i));
+
+  // Collecter tous les métiers présents
+  const metierSet=new Set();
+  days.forEach(d=>{
+    Object.keys(workloadOnDay(c,d)).forEach(m=>metierSet.add(m));
+  });
+  const metiers=[...metierSet].sort();
+
+  if(!metiers.length){
+    toast('Aucune intervention prévue sur cette période.');return;
+  }
+
+  // Construire le tableau
+  let table=`<table style="width:100%;border-collapse:collapse;font-size:11px;">
+    <thead><tr>
+      <th style="text-align:left;padding:5px;position:sticky;left:0;background:var(--bg);border:1px solid var(--border);min-width:120px;">Métier</th>`;
+  days.forEach(d=>{
+    const we=d.getDay()===0||d.getDay()===6;
+    const isToday=diffD(d,today)===0;
+    table+=`<th style="text-align:center;padding:3px 2px;font-size:9px;border:1px solid var(--border);min-width:24px;background:${isToday?'var(--accent)':we?'var(--bg3)':'var(--bg)'};color:${isToday?'white':we?'var(--text3)':'var(--text2)'};font-weight:${isToday?700:500};">
+      <div>${d.getDate()}</div>
+      <div style="font-size:8px;font-weight:400;">${d.toLocaleString('fr',{weekday:'narrow'})}</div>
+    </th>`;
+  });
+  table+=`</tr></thead><tbody>`;
+
+  metiers.forEach(m=>{
+    table+=`<tr>
+      <td style="padding:5px;position:sticky;left:0;background:var(--bg);border:1px solid var(--border);font-weight:600;color:var(--text);">${esc(m)}</td>`;
+    days.forEach(d=>{
+      const w=workloadOnDay(c,d);
+      const arr=w[m]||[];
+      const n=arr.length;
+      const we=d.getDay()===0||d.getDay()===6;
+      let bg=we?'var(--bg3)':'var(--bg)';
+      let color='var(--text)';
+      if(n>=3){bg='var(--danger)';color='white';}
+      else if(n===2){bg='var(--warn-text)';color='white';}
+      else if(n===1){bg='var(--info-bg)';color='var(--info-text);';}
+      const stNoms=arr.map(id=>stName(id)).join(', ');
+      table+=`<td style="text-align:center;padding:5px 2px;border:1px solid var(--border);background:${bg};color:${color};font-weight:${n>=2?700:400};" title="${stNoms}">${n||''}</td>`;
+    });
+    table+=`</tr>`;
+  });
+  table+=`</tbody></table>`;
+
+  showModal(`<div class="modal-title">📊 Charge journalière — ${esc(c.nom)}</div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:10px;">Nombre de sous-traitants par métier et par jour. <strong style="color:var(--warn-text);">Orange</strong> = 2 du même métier (à surveiller), <strong style="color:var(--danger-text);">Rouge</strong> = 3+ (surcharge probable).</p>
+    <div style="overflow-x:auto;max-width:100%;border:1px solid var(--border);border-radius:var(--radius);">
+      ${table}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+      <button onclick="closeModal()">Fermer</button>
+    </div>`);
+}
+
+function countPending(){
+  return db.chantiers.reduce((total,c)=>
+    total+c.taches.reduce((s,t)=>
+      s+(t.commentaires||[]).filter(cm=>cm.statut==='en_attente'||(cm.type!=='proposition'&&!cm.replied)).length
+    ,0)
+  ,0);
+}
+
+function renderAlertBanner(){
+  let banner=document.getElementById('alert-banner');
+  if(!banner){
+    banner=document.createElement('div');
+    banner.id='alert-banner';
+    document.querySelector('.topbar').insertAdjacentElement('afterend',banner);
+  }
+  const pending=db.chantiers.reduce((arr,c)=>{
+    c.taches.forEach(t=>{
+      (t.commentaires||[]).forEach(cm=>{
+        if(cm.statut==='en_attente'||(cm.type!=='proposition'&&!cm.replied)){
+          arr.push({c,t,cm});
+        }
+      });
+    });
+    return arr;
+  },[]);
+  if(!pending.length){banner.style.display='none';return;}
+  banner.style.cssText='background:var(--info-bg);border-bottom:1px solid var(--info-border);padding:7px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+  const groups=pending.reduce((g,x)=>{
+    const key=x.c.id;if(!g[key])g[key]={c:x.c,items:[]};g[key].items.push(x);return g;
+  },{});
+  let html=`<span style="font-size:12px;font-weight:600;color:var(--info-text);">🔔 ${pending.length} message${pending.length>1?'s':''} en attente</span>`;
+  Object.values(groups).forEach(({c,items})=>{
+    html+=`<button onclick="switchView('planning');selectC(${c.id});" style="font-size:11px;padding:3px 10px;background:var(--info-bg);border-color:var(--info-border);color:var(--info-text);">${esc(c.nom)} (${items.length})</button>`;
+  });
+  banner.innerHTML=html;
+}
+
 function renderOverview(){
+  if(isST()){renderSTOverview();return;}
   const actifs=db.chantiers.filter(c=>!c.archived);
   const archives=db.chantiers.filter(c=>c.archived);
   const totalDelays=actifs.reduce((s,c)=>s+c.taches.filter(t=>isDelayed(t)).length,0);
   const totalTaches=actifs.reduce((s,c)=>s+c.taches.length,0);
+  const totalPending=actifs.reduce((s,c)=>s+c.taches.reduce((s2,t)=>s2+(t.commentaires||[]).filter(cm=>cm.statut==='en_attente'||(cm.type!=='proposition'&&!cm.replied)).length,0),0);
 
   document.getElementById('ov-subtitle').textContent=
     `${actifs.length} chantier${actifs.length>1?'s':''} actif${actifs.length>1?'s':''}${archives.length?' · '+archives.length+' archivé'+( archives.length>1?'s':''):''}`;
 
-  // Indicateurs globaux
   const avgProg=actifs.length?Math.round(actifs.reduce((s,c)=>s+chantierProgress(c),0)/actifs.length):0;
   document.getElementById('ov-stats').innerHTML=`
     <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:120px;">
@@ -2207,12 +2480,11 @@ function renderOverview(){
       <div style="font-size:10px;color:${totalDelays?'var(--danger-text)':'var(--text2)'};text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Retards</div>
       <div style="font-size:24px;font-weight:700;color:${totalDelays?'var(--danger-text)':'var(--text)'};">${totalDelays}</div>
     </div>
-    <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:120px;">
-      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Total tâches</div>
-      <div style="font-size:24px;font-weight:700;color:var(--text);">${totalTaches}</div>
+    <div style="background:${totalPending?'var(--info-bg)':'var(--bg)'};border:1px solid ${totalPending?'var(--info-border)':'var(--border)'};border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:120px;cursor:${totalPending?'pointer':'default'};" onclick="${totalPending?'scrollToPending()':''}">
+      <div style="font-size:10px;color:${totalPending?'var(--info-text)':'var(--text2)'};text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Messages</div>
+      <div style="font-size:24px;font-weight:700;color:${totalPending?'var(--info-text)':'var(--text)'};">${totalPending||'—'}</div>
     </div>`;
 
-  // Cartes chantiers
   const allC=[...actifs,...archives];
   document.getElementById('ov-grid').innerHTML=allC.map(c=>{
     const prog=chantierProgress(c);
@@ -2220,49 +2492,141 @@ function renderOverview(){
     const delayed=c.taches.filter(t=>isDelayed(t));
     const blocked=c.taches.filter(t=>isBlocked(t));
     const done=c.taches.filter(t=>t.avancement>=100);
-    // Prochaine tâche à démarrer ou en cours
-    const today=new Date();
-    const upcoming=c.taches
-      .filter(t=>t.avancement<100&&!isDelayed(t)&&!isBlocked(t))
-      .sort((a,b)=>a.debut.localeCompare(b.debut))[0];
+    const pending=c.taches.reduce((s,t)=>s+(t.commentaires||[]).filter(cm=>cm.statut==='en_attente'||(cm.type!=='proposition'&&!cm.replied)).length,0);
+    const upcoming=c.taches.filter(t=>t.avancement<100&&!isDelayed(t)&&!isBlocked(t)).sort((a,b)=>a.debut.localeCompare(b.debut))[0];
     const stIds=[...new Set(c.taches.map(t=>t.stId).filter(Boolean))];
-    return`<div style="background:var(--bg);border:1px solid ${c.archived?'var(--border)':'var(--border2)'};border-radius:var(--radius-lg);padding:16px;opacity:${c.archived?.6:1};transition:box-shadow .15s;" onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,.1)'" onmouseleave="this.style.boxShadow='none'">
+    return`<div style="background:var(--bg);border:1px solid ${pending?'var(--info-border)':c.archived?'var(--border)':'var(--border2)'};border-radius:var(--radius-lg);padding:16px;opacity:${c.archived?.6:1};transition:box-shadow .15s;" onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,.1)'" onmouseleave="this.style.boxShadow='none'">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
         <div style="min-width:0;">
-          <div style="font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.nom}${c.archived?' 📦':''}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px;">${c.client}</div>
+          <div style="font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.nom)}${c.archived?' 📦':''}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px;">${esc(c.client)}</div>
         </div>
-        <span style="font-size:10px;font-weight:600;background:${status.bg};color:${status.color};border-radius:4px;padding:2px 8px;white-space:nowrap;flex-shrink:0;">${status.label}</span>
+        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0;">
+          ${pending?`<span style="font-size:10px;font-weight:600;background:var(--info-bg);color:var(--info-text);border-radius:4px;padding:2px 7px;">🔔 ${pending}</span>`:''}
+          <span style="font-size:10px;font-weight:600;background:${status.bg};color:${status.color};border-radius:4px;padding:2px 8px;">${status.label}</span>
+        </div>
       </div>
-      <!-- Barre de progression -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
         <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden;">
           <div style="height:100%;width:${prog}%;background:${prog>=100?'var(--green-text)':delayed.length?'var(--danger)':'var(--accent)'};border-radius:4px;transition:width .3s;"></div>
         </div>
         <span style="font-size:12px;font-weight:600;color:var(--text);flex-shrink:0;">${prog}%</span>
       </div>
-      <!-- Stats -->
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;">
         <span style="color:var(--text2);">${c.taches.length} tâche${c.taches.length>1?'s':''}</span>
         ${done.length?`<span style="color:var(--green-text);">✓ ${done.length} terminée${done.length>1?'s':''}</span>`:''}
         ${delayed.length?`<span style="color:var(--danger-text);">⚠ ${delayed.length} retard${delayed.length>1?'s':''}</span>`:''}
         ${blocked.length?`<span style="color:var(--warn-text);">🔗 ${blocked.length} attente</span>`:''}
       </div>
-      <!-- Prochaine tâche -->
       ${upcoming?`<div style="font-size:11px;color:var(--text2);margin-bottom:10px;padding:6px 8px;background:var(--bg2);border-radius:var(--radius);">
-        <span style="color:var(--text3);">Prochain :</span> <strong>${upcoming.nom}</strong> — ${fmtShort(pDate(upcoming.debut))}
-        ${stIds.includes(upcoming.stId)?` · <span style="color:${stColor(upcoming.stId)};font-weight:600;">${stName(upcoming.stId)}</span>`:''}
+        <span style="color:var(--text3);">Prochain :</span> <strong>${esc(upcoming.nom)}</strong> — ${fmtShort(pDate(upcoming.debut))}
+        ${stIds.includes(upcoming.stId)?` · <span style="color:${stColor(upcoming.stId)};font-weight:600;">${esc(stName(upcoming.stId))}</span>`:''}
       </div>`:''}
-      <!-- Dots ST -->
+      ${renderWorkloadMini(c)}
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div style="display:flex;gap:3px;flex-wrap:wrap;">
-          ${stIds.slice(0,6).map(id=>`<span style="width:10px;height:10px;border-radius:50%;background:${stColor(id)};" title="${stName(id)}"></span>`).join('')}
+          ${stIds.slice(0,6).map(id=>`<span style="width:10px;height:10px;border-radius:50%;background:${stColor(id)};" title="${esc(stName(id))}"></span>`).join('')}
           ${stIds.length>6?`<span style="font-size:10px;color:var(--text3);">+${stIds.length-6}</span>`:''}
         </div>
         <button onclick="switchView('planning');selectC(${c.id});" style="font-size:12px;padding:5px 12px;background:var(--info-bg);border-color:var(--info-border);color:var(--info-text);">Ouvrir →</button>
       </div>
     </div>`;
   }).join('');
+}
+
+// Vue d'ensemble pour un sous-traitant : liste de toutes ses tâches
+function renderSTOverview(){
+  if(!currentST)return;
+  document.getElementById('ov-subtitle').textContent='Toutes vos interventions';
+  const allTaches=[];
+  db.chantiers.forEach(c=>{
+    c.taches.filter(t=>t.stId===currentST.id).forEach(t=>{
+      allTaches.push({c,t});
+    });
+  });
+  allTaches.sort((a,b)=>a.t.debut.localeCompare(b.t.debut));
+
+  // Stats rapides
+  const today=new Date();
+  const enCours=allTaches.filter(({t})=>pDate(t.debut)<=today&&pDate(t.fin)>=today&&t.avancement<100);
+  const aVenir=allTaches.filter(({t})=>pDate(t.debut)>today&&t.avancement<100);
+  const terminees=allTaches.filter(({t})=>t.avancement>=100);
+
+  document.getElementById('ov-stats').innerHTML=`
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:100px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Total</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text);">${allTaches.length}</div>
+    </div>
+    <div style="background:var(--info-bg);border:1px solid var(--info-border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:100px;">
+      <div style="font-size:10px;color:var(--info-text);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">En cours</div>
+      <div style="font-size:24px;font-weight:700;color:var(--info-text);">${enCours.length}</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:100px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">À venir</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text);">${aVenir.length}</div>
+    </div>
+    <div style="background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius-lg);padding:14px 18px;flex:1;min-width:100px;">
+      <div style="font-size:10px;color:var(--green-text);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Terminées</div>
+      <div style="font-size:24px;font-weight:700;color:var(--green-text);">${terminees.length}</div>
+    </div>`;
+
+  if(!allTaches.length){
+    document.getElementById('ov-grid').innerHTML=`<div style="grid-column:1/-1;text-align:center;color:var(--text2);padding:2rem;">Aucune tâche assignée.</div>`;
+    return;
+  }
+
+  // Grouper par chantier
+  const byCh={};
+  allTaches.forEach(({c,t})=>{if(!byCh[c.id])byCh[c.id]={c,taches:[]};byCh[c.id].taches.push(t);});
+
+  document.getElementById('ov-grid').innerHTML=`<div style="grid-column:1/-1;">
+    ${Object.values(byCh).map(({c,taches})=>`
+      <div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div>
+            <div style="font-size:14px;font-weight:600;color:var(--text);">${esc(c.nom)}</div>
+            <div style="font-size:11px;color:var(--text2);">Client : ${esc(c.client)}</div>
+          </div>
+          <button onclick="switchView('planning');selectC(${c.id});" style="font-size:12px;padding:5px 12px;background:var(--info-bg);border-color:var(--info-border);color:var(--info-text);">Voir planning →</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--text2);font-weight:600;">Tâche</th>
+              <th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--text2);font-weight:600;">Début</th>
+              <th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--text2);font-weight:600;">Fin</th>
+              <th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--text2);font-weight:600;">Durée</th>
+              <th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--text2);font-weight:600;">Avancement</th>
+              <th style="padding:5px 8px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${taches.sort((a,b)=>a.debut.localeCompare(b.debut)).map(t=>{
+              const delayed=isDelayed(t);
+              const done=t.avancement>=100;
+              const today2=new Date();
+              const enC=pDate(t.debut)<=today2&&pDate(t.fin)>=today2&&!done;
+              const statut=done?'✅':delayed?'⚠':enC?'🔵':'⏳';
+              return`<tr style="border-bottom:1px solid var(--border);background:${delayed?'var(--danger-bg)':enC?'var(--info-bg)':'transparent'};">
+                <td style="padding:7px 8px;font-weight:600;color:${delayed?'var(--danger-text)':'var(--text)'};">${statut} ${esc(t.nom)}</td>
+                <td style="padding:7px 8px;color:var(--text2);">${fmtShort(pDate(t.debut))}</td>
+                <td style="padding:7px 8px;color:var(--text2);">${fmtShort(pDate(t.fin))}</td>
+                <td style="padding:7px 8px;color:var(--text2);">${taskDur(t.debut,t.fin)}j${t.joursParSemaine&&t.joursParSemaine<5?' · '+t.joursParSemaine+'j/sem':''}</td>
+                <td style="padding:7px 8px;">
+                  <div style="display:flex;align-items:center;gap:5px;">
+                    <div style="width:60px;height:5px;background:var(--border);border-radius:3px;"><div style="height:100%;width:${t.avancement}%;background:${delayed?'var(--danger)':done?'var(--green-text)':'var(--accent)'};border-radius:3px;"></div></div>
+                    <span style="font-size:11px;color:var(--text2);">${t.avancement}%</span>
+                  </div>
+                </td>
+                <td style="padding:7px 8px;text-align:right;">
+                  <button onclick="switchView('planning');selectC(${c.id});setTimeout(()=>openSTTaskModal(${t.id}),100);" style="font-size:10px;padding:3px 8px;">💬 Commenter</button>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`).join('')}
+  </div>`;
 }
 
 // ============================================================
@@ -2394,18 +2758,34 @@ async function start(){
   await initDB();
   ensureTokens();
   detectSTMode();
+  detectClientMode();
+
+  if(isClient()){
+    // Mode CLIENT : accès à un seul chantier, lecture seule + commentaires
+    activeId=currentClient.chantierId;
+    document.getElementById('top-date').textContent='👤 '+(currentClient.clientName||'Client')+' — '+currentClient.chantierNom;
+    const banner=document.createElement('div');
+    banner.style.cssText='background:#FFF7E6;border-bottom:1px solid #F0C36D;padding:6px 16px;font-size:12px;color:#7A5A1C;text-align:center;';
+    banner.innerHTML=`Vous consultez le planning du chantier <strong>${esc(currentClient.chantierNom)}</strong> — cliquez sur une tâche pour laisser un commentaire`;
+    document.querySelector('.topbar').insertAdjacentElement('afterend',banner);
+    ['btn-add','btn-export','btn-share','btn-settings','btn-alerts'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+    const sb=document.querySelector('.sidebar-header');if(sb)sb.style.display='none';
+    // Cacher tous les chantiers sauf celui-là
+    db.chantiers=db.chantiers.filter(c=>c.id===currentClient.chantierId);
+    // Cacher la page sous-traitants
+    document.querySelector('[data-view="st"]')?.remove();
+    selectC(activeId);
+    return;
+  }
+
   if(isST()){
-    // Mode sous-traitant : adapter l'interface
     document.getElementById('top-date').textContent='👷 '+currentST.nom;
     const stBanner=document.createElement('div');
     stBanner.style.cssText='background:var(--info-bg);border-bottom:1px solid var(--info-border);padding:6px 16px;font-size:12px;color:var(--info-text);text-align:center;';
     stBanner.innerHTML=`Vous consultez ce planning en tant que <strong>${esc(currentST.nom)}</strong> — cliquez sur une tâche pour commenter ou proposer des dates`;
     document.querySelector('.topbar').insertAdjacentElement('afterend',stBanner);
-    // Cacher les boutons entrepreneur
-    ['btn-add','btn-export','btn-share','btn-settings','btn-alerts'].forEach(id=>{
-      const el=document.getElementById(id);if(el)el.style.display='none';
-    });
-    document.querySelector('.sidebar-header')?.style && (document.querySelector('.sidebar-header').style.display='none');
+    ['btn-add','btn-export','btn-share','btn-settings','btn-alerts'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+    const sb=document.querySelector('.sidebar-header');if(sb)sb.style.display='none';
   }
 }
 start();
